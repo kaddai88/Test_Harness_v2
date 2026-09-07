@@ -13,7 +13,11 @@
 /**
  * Session record — represents a single AI-driven test session.
  *
- * Status flow: pending → planning → executing → completed | failed | cancelled
+ * Status flow: pending → planning → running → completed | failed | cancelled
+ *   pending:   session created, AgentLoop has not started
+ *   planning:  initializing execution context (tool registry, browser)
+ *   running:   AgentLoop is executing actual test actions
+ *   ("executing" is a legacy synonym for "running" — treat both as active)
  */
 export interface SessionRow {
   id: string;

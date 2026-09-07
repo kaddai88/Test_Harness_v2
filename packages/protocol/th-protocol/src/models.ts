@@ -59,10 +59,15 @@ export interface LLMConfig {
   temperature?: number;
 }
 
+/** Test type presets — different granularity levels for testing */
+export type TestType = "smoke" | "confirmation" | "acceptance" | "full";
+
 export interface SessionConfig {
   strategy: "sequential" | "parallel" | "adaptive" | string;
   maxTurns?: number;
   maxRetriesPerAction?: number;
   instructions?: string;
+  /** Test type preset: smoke | confirmation | acceptance | full */
+  testType?: TestType;
   llm: LLMConfig;
 }

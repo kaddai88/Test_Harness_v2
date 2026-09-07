@@ -76,6 +76,21 @@ export interface WorkflowContext {
   stagnantTurns: number;
   totalTurns: number;
   maxTurns: number;
+  /** Phase 4: Coverage-driven testing support */
+  coverageComplete: boolean;
+  coverageInitialized: boolean;
+  lastRawSnapshot: string;
+  /** Phase 4: Coverage model and policy (set when entering TEST) */
+  coverageModel?: import('./coverage.js').CoverageModel;
+  coveragePolicy?: import('./coverage.js').CoveragePolicy;
+  /** Phase 4: Current coverage target for this turn */
+  currentCoverageTarget?: import('./coverage.js').CoverageTarget;
+  /** The target URL being tested — used for deterministic NAVIGATE→TEST */
+  targetUrl: string;
+  /** Track how many consecutive turns the same target was selected but not acted on */
+  targetStagnationCount: number;
+  /** Feature keys that have been skipped due to stagnation */
+  skippedTargets: string[];
   /** Coverage: which transitions have fired */
   traversedTransitions: string[];
   /** Invariant violations detected */
@@ -98,6 +113,23 @@ export interface WorkflowContext {
   lastVerificationOutcome: string;
   /** Errors detected during testing (for reporting) */
   detectedErrors: Array<{ tool: string; error: string; turn: number }>;
+}
+
+// ─── State Invariants ───
+
+/** Normalize URL for comparison: lowercase, strip trailing slash, strip query/fragment */
+function normalizeUrlForCompare(url: string): string {
+  try {
+    const u = new URL(url);
+    let normalized = u.hostname.toLowerCase() + u.pathname;
+    // Strip trailing slash (but keep root path)
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+  } catch {
+    return url.toLowerCase().replace(/\/$/, '');
+  }
 }
 
 // ─── State Invariants ───
@@ -219,30 +251,39 @@ export const WORKFLOW_TRANSITIONS: WorkflowTransition[] = [
     from: WorkflowState.NAVIGATE,
     to: WorkflowState.TEST,
     key: 'NAVIGATE→TEST',
-    guard: (ctx) => ctx.targetReached,
+    guard: (ctx) => {
+      // Core principle: once the test target is reached, enter TEST immediately.
+      // Do NOT require testExecuted or any other condition — coverage model
+      // initialization happens when entering TEST, and the Planner + coverage
+      // engine take over from there.
+      return ctx.targetReached;
+    },
     invariant: invariantFor(WorkflowState.TEST),
-    message: 'Target module reached — entering TEST state',
+    message: 'Target reached — entering TEST state',
   },
   {
     from: WorkflowState.TEST,
     to: WorkflowState.REPORT,
     key: 'TEST→REPORT',
     guard: (ctx) => {
+      // Phase 4: Coverage-driven exit — coverage completeness is the sole criterion.
+      if (ctx.coverageInitialized) {
+        return ctx.coverageComplete;
+      }
+      // Legacy fallback: test plan based (only when coverage is not initialized)
       if (!ctx.testExecuted) return false;
-      // Must have test plan AND all items completed
       if (ctx.testPlan.length > 0) {
         const completed = ctx.testPlan.filter(t => t.completed).length;
         if (completed < ctx.testPlan.length) return false;
         return true;
       }
-      // Fallback: no plan, require minimum activity
       if (ctx.testActionCount < 5) return false;
       if (ctx.stagnantTurns >= 5) return true;
       if (ctx.maxTurns > 0 && ctx.totalTurns >= ctx.maxTurns - 3) return true;
       return false;
     },
     invariant: invariantFor(WorkflowState.REPORT),
-    message: 'Test plan completed — entering REPORT state',
+    message: 'Testing complete — entering REPORT state',
   },
   {
     from: WorkflowState.REPORT,
@@ -291,7 +332,15 @@ export function getAllowedTools(state: WorkflowState): string[] | null {
     case WorkflowState.LOGIN:
       return [...ALL_MCP_TOOLS];
     case WorkflowState.NAVIGATE:
-      return [...ALL_MCP_TOOLS];
+      // NAVIGATE = find the test target. No test actions allowed.
+      // If a site requires clicking menus to reach the target page,
+      // browser_click is allowed for navigation purposes.
+      return [
+        'browser_navigate', 'browser_navigate_back',
+        'browser_snapshot', 'browser_evaluate',
+        'browser_click', 'browser_wait_for',
+        'browser_tabs',
+      ];
     case WorkflowState.TEST:
       return [...ALL_MCP_TOOLS, 'report_finding'];
     case WorkflowState.REPORT:
@@ -337,14 +386,29 @@ Navigate to the specific module the user wants to test.
     case WorkflowState.TEST:
       return `## Current Phase: TEST
 
-**STEP 1 — Create a test plan FIRST.** List 5-8 specific test actions.
+**IMPORTANT: Tab-clicking is NOT testing.**
+When you click a tab (产品, 项目, 人员, 干系人, or ANY tab), you have ONLY navigated. You have NOT tested anything yet. After clicking a tab, you MUST perform at least one real operation within that tab before moving on.
 
-**STEP 2 — Execute the plan.** Work through each item. After each action, review the auto-returned snapshot.
+**STEP 1 — Snapshot & Analyze.** Call browser_snapshot. Identify ALL interactive elements.
 
-**STEP 3 — Report only when ALL plan items are done.**
+**STEP 2 — Create a test plan.** List 5-8+ specific test actions. Each action must involve an actual operation (create/edit/delete/fill/check), NOT just navigation.
+
+**STEP 3 — Execute the plan.** For each tab you enter:
+- DO NOT just click the tab and move on
+- Perform at least one real operation: create an item, fill a form, click a checkbox, edit data, delete something
+- Only after performing an operation can you move to the next tab
+
+**STEP 4 — Report only when ALL plan items are done.**
 
 CRITICAL RULES:
-- Use browser_snapshot to understand the page first, then use refs to interact
+- **NAVIGATION ≠ TESTING.** Clicking a tab, link, or list item is navigation. Testing means performing an operation AFTER navigation.
+- **Every tab you visit must have at least one operation performed inside it.** If you click "项目" tab, you must create/edit/delete a project inside it. If you click "人员" tab, you must add/remove a person. No exceptions.
+- **MUST test ALL form element types — not just textboxes:**
+  - **Checkbox** — use browser_check/browser_uncheck, test both checked and unchecked states
+  - **Radio buttons** — test different options, observe page changes
+  - **Dropdown/Select** — use browser_select_option or click to open dropdown and select different options. Every dropdown on the form must be operated at least once.
+  - **Date picker** — select a date
+  - **Text input** — fill and submit
 - When you see a FORM page, use browser_fill_form BEFORE browser_click on submit
 - NEVER click submit/save on an empty form
 - Use browser_click with refs from the snapshot for all interactions
@@ -353,11 +417,14 @@ CRITICAL RULES:
 - Use report_finding for any bugs found
 
 General guidance:
-1. browser_snapshot → understand page structure
-2. browser_click refs → navigate menus, open pages
-3. browser_fill_form / browser_type → fill forms
-4. Review auto-snapshots after each action
-5. Handle dialogs immediately`;
+1. browser_snapshot → understand page structure, identify ALL element types
+2. Pick ONE tab → navigate to it → PERFORM OPERATIONS inside it → then move to next tab
+3. browser_fill_form / browser_type → fill text fields
+4. browser_check / browser_uncheck → toggle checkboxes
+5. browser_select_option → select dropdown options
+6. Review auto-snapshots after each action
+7. Handle dialogs immediately
+8. Create → Enter sub-page → Perform operations → Verify → Edit → Delete (full lifecycle)`;
     case WorkflowState.REPORT:
       return `## Current Phase: REPORT
 
@@ -391,6 +458,15 @@ export function updateWorkflowContext(
   // URL tracking: browser_navigate
   if (toolName === 'browser_navigate' && success) {
     updated.currentPageUrl = String(toolArgs.url ?? '');
+    // Deterministic target detection: if the current URL matches the test target URL,
+    // we've reached the target — no need to wait for a snapshot.
+    if (context.targetUrl && updated.currentPageUrl) {
+      const currentNorm = normalizeUrlForCompare(updated.currentPageUrl);
+      const targetNorm = normalizeUrlForCompare(context.targetUrl);
+      if (currentNorm === targetNorm || currentNorm.startsWith(targetNorm + '/')) {
+        updated.targetReached = true;
+      }
+    }
   }
 
   // browser_snapshot: aria tree text → update lastPageContent for guard checks
@@ -400,10 +476,20 @@ export function updateWorkflowContext(
       // Save previous snapshot for verification diff, then update
       updated.lastSnapshot = updated.lastPageContent;
       updated.lastPageContent = text.toLowerCase();
+      // Phase 4: Keep original-case snapshot for feature discovery
+      updated.lastRawSnapshot = text;
     }
-    // Target reached: snapshot has substantial content
+    // Target reached: substantial content on page AND (URL matches target OR we're navigating)
     if (text.length > 200 && currentState === WorkflowState.NAVIGATE) {
       updated.targetReached = true;
+    }
+    // Also check URL match (handles cases where URL is the target but content was not yet observed)
+    if (currentState === WorkflowState.NAVIGATE && context.targetUrl && updated.currentPageUrl) {
+      const currentNorm = normalizeUrlForCompare(updated.currentPageUrl);
+      const targetNorm = normalizeUrlForCompare(context.targetUrl);
+      if (currentNorm === targetNorm || currentNorm.startsWith(targetNorm + '/')) {
+        updated.targetReached = true;
+      }
     }
   }
 
@@ -546,7 +632,7 @@ export function tryTransition(
 
 // ─── Initial Context ───
 
-export function createInitialContext(maxTurns: number = 99): WorkflowContext {
+export function createInitialContext(maxTurns: number = 99, targetUrl: string = ''): WorkflowContext {
   return {
     loginSubmitted: false,
     loginConfirmed: false,
@@ -568,5 +654,11 @@ export function createInitialContext(maxTurns: number = 99): WorkflowContext {
     verificationFailures: 0,
     lastVerificationOutcome: '',
     detectedErrors: [],
+    coverageComplete: false,
+    coverageInitialized: false,
+    lastRawSnapshot: '',
+    targetUrl,
+    targetStagnationCount: 0,
+    skippedTargets: [],
   };
 }

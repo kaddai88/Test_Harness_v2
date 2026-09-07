@@ -30,7 +30,10 @@ export async function handleStatus(
 ): Promise<void> {
   const totalSessions = await deps.repos.sessions.count();
   const pendingSessions = await deps.repos.sessions.count({ status: "pending" });
-  const activeSessions = await deps.repos.sessions.count({ status: "executing" });
+  // "running" is the current term for active execution; "executing" is legacy data
+  const runningSessions = await deps.repos.sessions.count({ status: "running" });
+  const executingSessions = await deps.repos.sessions.count({ status: "executing" });
+  const activeSessions = runningSessions + executingSessions;
   const completedSessions = await deps.repos.sessions.count({ status: "completed" });
   const failedSessions = await deps.repos.sessions.count({ status: "failed" });
 

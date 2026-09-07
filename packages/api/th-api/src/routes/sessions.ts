@@ -21,6 +21,8 @@ interface CreateSessionRequest {
   targetUrl: string;
   targetConfig?: Record<string, unknown>;
   scanConfig?: Record<string, unknown>;
+  /** Test type preset: smoke | confirmation | acceptance | full */
+  testType?: "smoke" | "confirmation" | "acceptance" | "full";
 }
 
 /** POST /api/v1/sessions — create a new session and enqueue it. */
@@ -47,6 +49,11 @@ export async function handleCreateSession(
   const uploadedImages = Array.isArray(scanConfig.images) 
     ? scanConfig.images.filter((img): img is string => typeof img === "string")
     : [];
+
+  // Add testType to scanConfig if provided
+  if (body.testType) {
+    scanConfig.testType = body.testType;
+  }
 
   const session = await deps.repos.sessions.create({
     targetUrl: body.targetUrl,

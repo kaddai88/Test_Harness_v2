@@ -192,9 +192,12 @@ export async function createMCPNativeTools(
 
   for (const mcpTool of mcpTools) {
     tools.push(createMCPToolAdapter(mcpTool, serverUrl));
-    console.log(`[MCPTools] Registered: ${mcpTool.name}`);
+    // Per-tool registration is debug noise; summary logged below
+    if ((process.env.TH_LOG_LEVEL ?? "").toLowerCase() === "debug") {
+      console.log(`[MCPTools] Registered: ${mcpTool.name}`);
+    }
   }
 
-  console.log(`[MCPTools] Total registered: ${tools.length} tools (all from Playwright MCP)`);
+  console.log(`[MCPTools] ${tools.length} tools registered from Playwright MCP`);
   return tools;
 }

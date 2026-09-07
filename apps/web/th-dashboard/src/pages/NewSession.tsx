@@ -32,6 +32,7 @@ export const NewSession: React.FC = () => {
   const [instructions, setInstructions] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [testType, setTestType] = useState<'smoke' | 'confirmation' | 'acceptance' | 'full'>('acceptance');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load settings from localStorage
@@ -240,6 +241,7 @@ export const NewSession: React.FC = () => {
         maxTurns,
         maxRetries,
         images.length > 0 ? images : undefined,
+        testType,
       );
       navigate(`/sessions/${id}`);
     } catch {
@@ -282,6 +284,34 @@ export const NewSession: React.FC = () => {
             Describe what you want tested, or upload a test specification file from your client.
             The AI will analyze the content and execute only the specified tests.
           </p>
+
+          {/* Test Type Selector */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-300 mb-2">测试类型 (Test Type)</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { value: 'smoke', label: '冒烟测试', desc: '快速核心验证' },
+                { value: 'confirmation', label: '确认测试', desc: '特定功能验证' },
+                { value: 'acceptance', label: '验收测试', desc: '全面功能覆盖' },
+                { value: 'full', label: '全量测试', desc: ' exhaustive 覆盖' },
+              ].map((type) => (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => setTestType(type.value as any)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-all ${
+                    testType === type.value
+                      ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  <div className="text-sm font-medium">{type.label}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{type.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <textarea
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}

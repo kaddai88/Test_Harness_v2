@@ -93,14 +93,12 @@ export async function createMCPModeTools(
   // Add MCP native browser tools — direct from Playwright MCP server
   const mcpTools = await createMCPNativeTools(mcpServerUrl);
   tools.push(...mcpTools);
-  console.log(`[Tools] MCP native mode: ${mcpTools.length} browser tools registered`);
 
   // Add site knowledge tools (don't need BrowserDriver, file-based only)
   // configure_site: manual site profile configuration
   // explore_site is NOT added — LLM explores via browser_snapshot in MCP mode
   const emptyContainer = new THContainer();
   tools.push(createConfigureSiteTool(emptyContainer));
-  console.log(`[Tools] MCP mode: configure_site registered for site knowledge management`);
 
   return tools;
 }

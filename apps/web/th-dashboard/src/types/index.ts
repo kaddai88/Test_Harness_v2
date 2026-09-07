@@ -79,6 +79,8 @@ export interface SessionCreateRequest {
   maxTurns?: number;
   maxRetriesPerAction?: number;
   timeout?: number;
+  /** Test type preset: smoke | confirmation | acceptance | full */
+  testType?: 'smoke' | 'confirmation' | 'acceptance' | 'full';
 }
 
 export interface SessionCreateResponse {

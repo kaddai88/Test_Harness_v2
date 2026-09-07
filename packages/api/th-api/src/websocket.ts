@@ -89,7 +89,10 @@ export class WebSocketHandler {
   /** Broadcast an event to all connected clients. */
   broadcast(event: { type: string; [key: string]: unknown }): void {
     const payload = JSON.stringify(event);
-    console.log(`[WebSocket] Broadcasting ${event.type} to ${this.clients.size} clients`);
+    // Per-event broadcast is debug-level noise; enable via TH_LOG_LEVEL=debug
+    if ((process.env.TH_LOG_LEVEL ?? "").toLowerCase() === "debug") {
+      console.log(`[WebSocket] Broadcasting ${event.type} to ${this.clients.size} clients`);
+    }
     for (const client of this.clients.values()) {
       this.sendToClient(client, JSON.parse(payload));
     }

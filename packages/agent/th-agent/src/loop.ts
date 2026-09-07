@@ -44,7 +44,7 @@ import type {
 } from "./context.js";
 import type { ToolRegistry } from "@test-harness/th-tools";
 import type { EventBusImpl } from "@test-harness/th-core";
-import { SYSTEM_PROMPT, buildSessionPlanningPrompt, type SiteHints } from "./prompts/system.js";
+import { getSystemPrompt, buildSessionPlanningPrompt, type SiteHints } from "./prompts/system.js";
 import { SessionLog } from "./session.js";
 import { StreamAssembler } from "./assembler.js";
 import {
@@ -58,21 +58,87 @@ import {
   type WorkflowContext,
 } from "./workflow.js";
 import { verifyAction, getRecoveryGuidance } from "./verify.js";
+import {
+  createLoginGuardState,
+  detectLoginRequirement,
+  recordCredentialsSubmitted,
+  checkLoginConfirmation,
+  shouldBlockNavigation,
+  describeLoginState,
+  type LoginGuardState,
+} from "./login.js";
 import { CognitiveEngine } from "@test-harness/th-cognition";
 import * as path from "path";
+
+// Phase 4: Coverage-driven testing
+import {
+  createCoverageModel,
+  registerModule,
+  registerSurface,
+  registerFeature,
+  updateScenario,
+  markScenarioPlanned,
+  selectNextTarget,
+  shouldFinishTesting,
+  formatCoverageSummary,
+  updateSurfaceCoverageStatus,
+  getCoverageGaps,
+  calculateAllIntentRelevance,
+  resolveActionFeature,
+  COVERAGE_POLICIES,
+  type CoverageModel,
+  type CoveragePolicy,
+  type CoverageTarget,
+  type ScenarioType,
+  type ScenarioOutcome,
+  type FeatureType,
+  type TestType as CoverageTestType,
+} from "./coverage.js";
+import {
+  extractSurfaceSignature,
+  generateSurfaceKey,
+  generateModuleKey,
+  generateModuleName,
+} from "./surface-signature.js";
+import {
+  generateTestPlan,
+  validateTestPlan,
+} from "./planner.js";
+
+/**
+ * Log levels for agent observability.
+ *
+ * INFO: what a developer needs to follow the test — state changes, targets,
+ *       plans, actions, coverage updates, exit decisions.
+ * DEBUG: full diagnostics — raw snapshots, prompts, planner internals,
+ *        feature discovery details, tool registration details.
+ *
+ * Principle: never delete diagnostic capability, only lower default visibility.
+ * Set TH_LOG_LEVEL=debug to enable debug output.
+ */
+export type AgentLogLevel = "info" | "debug";
+
+/** Minimum level from env: TH_LOG_LEVEL=debug enables debug output. Default: info */
+const MIN_LOG_LEVEL: AgentLogLevel =
+  (process.env.TH_LOG_LEVEL as AgentLogLevel) === "debug" ? "debug" : "info";
 
 /** Logger interface for the agent loop */
 export interface AgentLogger {
   info(msg: string): void;
+  /** Detailed diagnostics — hidden at default INFO level */
+  debug(msg: string): void;
   warn(msg: string): void;
   error(msg: string): void;
   toolCall(name: string, input: unknown): void;
   toolResult(name: string, success: boolean, duration: number): void;
 }
 
-/** Default console logger */
-const defaultLogger: AgentLogger = {
+/** Default console logger with level filtering (exported for testing) */
+export const defaultLogger: AgentLogger = {
   info: (msg) => console.log(`  [Agent] ${msg}`),
+  debug: (msg) => {
+    if (MIN_LOG_LEVEL === "debug") console.log(`  [Agent] ${msg}`);
+  },
   warn: (msg) => console.warn(`  [Agent] ⚠ ${msg}`),
   error: (msg) => console.error(`  [Agent] ✗ ${msg}`),
   toolCall: (name, input) =>
@@ -97,6 +163,111 @@ export interface AgentLoopOptions {
   siteHints?: SiteHints;
   /** Uploaded images (base64 data URLs) for vision-capable LLMs */
   images?: string[];
+}
+
+// ─── Phase 4: Coverage Helper Functions ──────────────────────────────────────
+
+/** Map aria role string to CoverageFeatureType */
+function ariaRoleToFeatureType(role: string): FeatureType | null {
+  const r = role.toLowerCase();
+  if (r === 'button') return 'button';
+  if (r === 'link') return 'link';
+  if (r === 'textbox' || r === 'textarea') return 'text-input';
+  if (r === 'spinbutton') return 'number-input';
+  if (r === 'checkbox') return 'checkbox';
+  if (r === 'radio') return 'radio';
+  if (r === 'combobox' || r === 'listbox') return 'dropdown';
+  if (r === 'table' || r === 'grid') return 'table';
+  if (r === 'tab') return 'tab';
+  if (r === 'dialog' || r === 'alertdialog') return 'modal';
+  return null;
+}
+
+/**
+ * Discover features from an aria snapshot and register them in the coverage model.
+ * Called when we first arrive on a surface, or when the surface changes significantly.
+ */
+function discoverFeaturesFromSnapshot(
+  snapshot: string,
+  surface: import('./coverage.js').CoverageSurface
+): void {
+  const lines = snapshot.split('\n');
+  let featureIndex = 0;
+
+  for (const line of lines) {
+    const trimmed = line.replace(/^\s+/, '');
+    // Match: [ref=XX] role "label" or role "label"
+    const refMatch = trimmed.match(/(?:\[ref=(\w+)\]\s*)?(\w+)\s+"([^"]+)"/);
+    if (!refMatch) continue;
+
+    const ref = refMatch[1];
+    const role = (refMatch[2] ?? '').toLowerCase();
+    const label = (refMatch[3] ?? '').trim();
+
+    const featureType = ariaRoleToFeatureType(role);
+    if (!featureType || !label) continue;
+
+    // Skip overly long labels — likely dynamic/placeholder content, not stable UI labels
+    if (label.length > 15) continue;
+
+    const key = ref ?? `feat_${featureIndex++}`;
+    const feature = registerFeature(surface, key, label, featureType);
+    // Store the aria ref for action-to-target matching
+    if (ref) {
+      feature.ref = ref;
+    }
+  }
+
+  // Heuristic: detect search fields from textbox labels
+  for (const line of lines) {
+    const trimmed = line.replace(/^\s+/, '');
+    const refMatch = trimmed.match(/(?:\[ref=(\w+)\]\s*)?textbox\s+"([^"]+)"/i);
+    if (refMatch) {
+      const label = (refMatch[2] ?? '').toLowerCase();
+      const rawLabel = refMatch[2] ?? '';
+      if (/search|\u641C\u7D22|filter|\u7B5B\u9009|\u67E5\u627E/.test(label)) {
+        const key = refMatch[1] ?? `feat_${featureIndex++}`;
+        registerFeature(surface, key, rawLabel, 'search');
+      }
+    }
+  }
+}
+
+/**
+ * Update coverage model after a successful action tool execution.
+ * Marks the current target's scenario as tested with the appropriate outcome.
+ */
+function updateCoverageFromAction(
+  model: CoverageModel,
+  toolName: string,
+  success: boolean,
+  currentSurfaceKey?: string,
+  currentTarget?: CoverageTarget | null
+): void {
+  if (!currentSurfaceKey || !currentTarget) return;
+
+  // Find the target feature and update its scenario
+  for (const module of model.modules) {
+    const surface = module.surfaces.find(s => s.key === currentSurfaceKey);
+    if (!surface) continue;
+
+    const feature = surface.features.find(f => f.key === currentTarget.featureKey);
+    if (!feature) continue;
+
+    const scenarioType = currentTarget.scenarioType;
+    const outcome: ScenarioOutcome = success ? 'pass' : 'fail';
+
+    updateScenario(feature, scenarioType, outcome, {
+      action: toolName,
+      result: outcome,
+      turn: 0, // Will be filled in by caller if needed
+      timestamp: Date.now(),
+    });
+
+    // Update surface coverage status
+    updateSurfaceCoverageStatus(surface, COVERAGE_POLICIES.smoke);
+    break;
+  }
 }
 
 export class AgentLoop {
@@ -133,19 +304,19 @@ export class AgentLoop {
       eventBus: options.eventBus,
       container: options.container,
       sessionLog,
-      state: new Map(),
+      state: new Map([["loginGuard", createLoginGuardState()]]),
       turnCount: 0,
       stepCount: 0,
       maxTurns: options.config.maxTurns ?? 99,
       maxRetriesPerAction: options.config.maxRetriesPerAction ?? 3,
       toolFailureCounts: new Map(),
       abortSignal: abortController.signal,
-      workflow: createInitialContext(options.config.maxTurns ?? 99),
+      workflow: createInitialContext(options.config.maxTurns ?? 99, options.target.url),
       workflowState: WorkflowState.INIT,
       cognition: new CognitiveEngine({ storagePath: path.resolve(process.cwd(), '.cognition') }),
     };
 
-    logger.info(`Starting session for ${options.target.url}`);
+    logger.info(`[STATE] session started for ${options.target.url}`);
 
     // ── Cognitive Engine: Session start — retrieve relevant experiences ──
     if (context.cognition) {
@@ -154,7 +325,7 @@ export class AgentLoop {
         sessionLog.append("system/note", {
           note: `[Cognition] 历史经验:\n${sessionStart.prompt}`,
         });
-        logger.info(`[Cognition] Retrieved experiences for ${options.target.url}`);
+        logger.debug(`[Cognition] Retrieved experiences for ${options.target.url}`);
       }
     }
 
@@ -186,7 +357,7 @@ export class AgentLoop {
     ) {
       context.turnCount++;
       context.stepCount = 0;
-      logger.info(`Turn ${context.turnCount}...`);
+      logger.debug(`Turn ${context.turnCount}...`);
 
       // Log turn start
       sessionLog.append("turn/start", { turn: context.turnCount });
@@ -207,7 +378,7 @@ export class AgentLoop {
             reason: { kind: "completed" },
           });
 
-          logger.info("Session complete.");
+          logger.info("[STATE] session complete.");
           
           // ── Cognitive Engine: Session end — save memories ──
           await this.finalizeSession(context, "completed", result.response.content, logger);
@@ -325,7 +496,7 @@ export class AgentLoop {
         
       // Log stats
       const stats = context.cognition.getStats();
-      logger.info(`[Cognition] Session saved. Memory: ${stats.episodes} episodes, ${stats.knowledge} knowledge, ${stats.procedures} procedures`);
+      logger.debug(`[Cognition] Session saved. Memory: ${stats.episodes} episodes, ${stats.knowledge} knowledge, ${stats.procedures} procedures`);
     } catch (err) {
       logger.warn(`[Cognition] Failed to save session: ${err}`);
     }
@@ -348,13 +519,143 @@ export class AgentLoop {
     context.stepCount++;
     const step = context.stepCount;
 
-    // ── Workflow: Add state-specific prompt ──
+    // ── Workflow: Add state-specific prompt ─
     const statePrompt = getStatePrompt(context.workflowState);
-    const enhancedSystemPrompt = SYSTEM_PROMPT + '\n\n' + statePrompt;
+    const testType = context.config.testType;
+    const basePrompt = getSystemPrompt(testType);
+    const enhancedSystemPrompt = basePrompt + '\n\n' + statePrompt;
+
+    // ── Phase 4: Coverage-driven prompt injection ──
+    let finalSystemPrompt = enhancedSystemPrompt;
+    if (context.workflowState === WorkflowState.TEST && context.workflow.coverageInitialized && context.workflow.coverageModel && context.workflow.coveragePolicy) {
+      const coverageModel = context.workflow.coverageModel;
+      const coveragePolicy = context.workflow.coveragePolicy;
+
+      // 1. Update surface from latest snapshot
+      const rawSnapshot = context.workflow.lastRawSnapshot;
+      if (rawSnapshot) {
+        const currentSignature = extractSurfaceSignature(rawSnapshot, context.workflow.currentPageUrl);
+        const currentSurfaceKey = generateSurfaceKey(currentSignature);
+
+        // Check if surface changed
+        if (coverageModel.currentSurfaceKey) {
+          const prevSurface = coverageModel.modules
+            .flatMap(m => m.surfaces)
+            .find(s => s.key === coverageModel.currentSurfaceKey);
+          if (prevSurface) {
+            // Compare using stored signature hash instead of reconstructing empty signature
+            const prevHash = prevSurface.signatureHash ?? '';
+            const currHash = currentSignature.hash;
+            const change = prevHash === currHash ? 'same' as const :
+                           prevHash ? 'major' as const : 'minor' as const;
+            
+            // Log surface change — same: debug (noise), major: info (important)
+            if (change === 'same') {
+              logger.debug(`[SURFACE] key: ${currentSurfaceKey}, change: ${change}, hash: ${prevHash.slice(0,8)}→${currHash.slice(0,8)}`);
+            } else {
+              logger.info(`[SURFACE] changed: ${prevHash.slice(0,8)} → ${currHash.slice(0,8)} (${change})`);
+            }
+            
+            if (change === 'major' && currentSurfaceKey !== coverageModel.currentSurfaceKey) {
+              // New surface (different URL) — register it
+              const moduleKey = generateModuleKey(currentSignature);
+              const moduleName = generateModuleName(currentSignature);
+              registerModule(coverageModel, moduleKey, moduleName);
+              const newSurface = registerSurface(
+                coverageModel, moduleKey, currentSurfaceKey,
+                context.workflow.currentPageUrl, currentSignature.title
+              );
+              newSurface.signatureHash = currHash;
+              discoverFeaturesFromSnapshot(rawSnapshot, newSurface);
+              coverageModel.currentSurfaceKey = currentSurfaceKey;
+              logger.info(`[SURFACE] Registered new surface: ${currentSurfaceKey}, ${newSurface.features.length} features`);
+            }
+          }
+        } else {
+          coverageModel.currentSurfaceKey = currentSurfaceKey;
+        }
+      }
+
+      // 2. Select next target (with user instructions for intent relevance)
+      const instructions = context.config.instructions as string | undefined;
+      const target = selectNextTarget(coverageModel, coveragePolicy, instructions, context.workflow.skippedTargets);
+      context.workflow.currentCoverageTarget = target ?? undefined;
+
+      // 3. Build coverage context for LLM
+      const coverageSummary = formatCoverageSummary(coverageModel, coveragePolicy, coverageModel.currentSurfaceKey);
+      const coverageLines = ['\n## Coverage-Guided Testing'];
+      coverageLines.push(coverageSummary);
+
+      // Log coverage state — summary detail at debug, gap count at info
+      const gaps = getCoverageGaps(coverageModel, coveragePolicy, instructions);
+      logger.debug(`[COVERAGE] summary: ${coverageSummary.replace(/\n/g, ' | ')}`);
+      logger.info(`[COVERAGE] gaps: ${gaps.length} remaining`);
+
+      if (target) {
+        coverageLines.push('');
+        coverageLines.push(`CURRENT TARGET: Test ${target.featureKey} (${target.scenarioType}) [priority: ${target.priority.level}]`);
+
+        // Log target — find the feature name and intent relevance
+        let intentStr = '0.0';
+        let featureName = target.featureKey;
+        for (const m of coverageModel.modules) {
+          const s = m.surfaces.find(ss => ss.key === target.surfaceKey);
+          if (!s) continue;
+          const f = s.features.find(ff => ff.key === target.featureKey);
+          if (f) {
+            featureName = f.name;
+            if (f.intentRelevance) {
+              intentStr = f.intentRelevance.score.toFixed(2);
+            }
+          }
+          break;
+        }
+        logger.info(`[TARGET] ${target.featureKey} "${featureName}" scenario=${target.scenarioType} priority=${target.priority.level} intent=${intentStr}`);
+
+        // Generate a plan for this target to guide the LLM
+        const plan = generateTestPlan(coverageModel, target, coveragePolicy);
+        if (plan && validateTestPlan(plan)) {
+          // Log plan summary at info, step details at debug
+          logger.info(`[PLAN] planner=${plan.plannerLevel} steps=${plan.steps.length}`);
+          for (const step of plan.steps) {
+            logger.debug(`[PLAN]   - ${step.description}`);
+          }
+
+          // NOTE: Do NOT call markScenarioPlanned() here.
+          // The scenario should only be marked as 'planned' after the LLM actually
+          // performs a matching action. If we mark it here and the LLM does something
+          // else, the scenario gets stuck in 'planned' state forever — it will keep
+          // being selected by selectNextTarget() but never get tested.
+
+          coverageLines.push('');
+          coverageLines.push('Test steps:');
+          for (const step of plan.steps) {
+            coverageLines.push(`- ${step.description}`);
+          }
+        }
+      } else {
+        const finish = shouldFinishTesting(coverageModel, coveragePolicy, { turnsUsed: context.turnCount });
+        
+        // Log exit check
+        logger.info(`[EXIT] complete: ${finish.shouldFinish}, reason: ${finish.reason}`);
+        
+        if (finish.shouldFinish) {
+          context.workflow.coverageComplete = true;
+          coverageLines.push('');
+          coverageLines.push(`All coverage targets met (${finish.reason}). Proceed to to report.`);
+        } else {
+          coverageLines.push('');
+          coverageLines.push('No specific target right now. Continue exploring the page.');
+          coverageModel.discovery.stableTurns++;
+        }
+      }
+
+      finalSystemPrompt = enhancedSystemPrompt + '\n' + coverageLines.join('\n');
+    }
 
     // ── Step 1: Pre-step waterfall ──
     // Derive messages from session log
-    const messages = sessionLog.deriveMessages(enhancedSystemPrompt);
+    const messages = sessionLog.deriveMessages(finalSystemPrompt);
 
     // Fire pre-step waterfall — plugins can modify or reject
     const preStepResult = await eventBus.waterfall(AgentPreStepEvent, {
@@ -394,7 +695,7 @@ export class AgentLoop {
     const allowedTools = getAllowedTools(context.workflowState);
     if (allowedTools !== null) {
       toolSchemas = toolSchemas.filter(ts => allowedTools.includes(ts.name));
-      logger.info(`[Workflow] State=${context.workflowState}, allowed tools: ${allowedTools.join(', ')}`);
+      logger.debug(`[STATE] state=${context.workflowState}, allowed tools: ${allowedTools.join(', ')}`);
     }
 
     // Request waterfall — plugins can modify model config
@@ -476,8 +777,37 @@ export class AgentLoop {
       step,
     });
 
-    // If no tool calls, the agent is done
+    // If no tool calls, the agent might be done — but check coverage first.
     if (!response.toolCalls || response.toolCalls.length === 0) {
+      // If in TEST state with coverage model, check if testing is actually complete
+      if (context.workflowState === WorkflowState.TEST && context.workflow.coverageModel && context.workflow.coveragePolicy) {
+        const finish = shouldFinishTesting(
+          context.workflow.coverageModel,
+          context.workflow.coveragePolicy,
+          { turnsUsed: context.turnCount }
+        );
+
+        if (finish.shouldFinish) {
+          // Coverage complete — let the workflow transition to REPORT on the next check
+          context.workflow.coverageComplete = true;
+          logger.info(`[EXIT] LLM stopped but coverage complete: ${finish.reason}`);
+          sessionLog.append('system/note', {
+            note: `[Coverage] Complete: ${finish.reason}. Rate: ${(finish.details.coverageRate * 100).toFixed(0)}%`,
+          });
+        } else {
+          // Coverage NOT complete — continue testing, prompt LLM to keep going
+          const noToolInstructions = context.config.instructions as string | undefined;
+          const gaps = getCoverageGaps(context.workflow.coverageModel, context.workflow.coveragePolicy, noToolInstructions);
+          logger.info(`[EXIT] coverage incomplete: ${gaps.length} targets remaining — continuing`);
+          const topGap = gaps[0];
+          const guidance = topGap
+            ? `Continue testing. Next target: test "${topGap.featureKey}" (${topGap.scenarioType}) [priority: ${topGap.priority.level}]. Do NOT stop until all coverage targets are met.`
+            : `Continue testing. There are still uncovered targets. Do NOT stop until all coverage targets are met.`;
+          sessionLog.append('system/note', { note: guidance });
+          return { complete: false, response: { content: response.content }, toolResults: [] };
+        }
+      }
+
       // Fire turn-stopping event — plugins can request continuation
       await eventBus.serial(AgentTurnStoppingEvent, {
         sessionId: context.sessionId,
@@ -494,6 +824,9 @@ export class AgentLoop {
     // ── Step 4: Execute tool calls ──
     const toolResults: TurnResult["toolResults"] = [];
 
+    // Track whether the current coverage target was matched by any action this turn
+    let targetMatchedThisTurn = false;
+
     for (const toolCall of response.toolCalls) {
       // Log tool call
       sessionLog.append("tool/call", {
@@ -506,43 +839,46 @@ export class AgentLoop {
 
       logger.toolCall(toolCall.name, toolCall.arguments);
 
-      // ── LOGIN GUARD: Track login success and block re-login ──
-      // Login is confirmed when agent navigates to a NON-login page.
-      // Once logged in, block any browser_navigate to login page URLs.
+      // ── LOGIN GUARD: Evidence-based login state tracking ──
+      // "URL is not a login URL" does NOT mean "logged in".
+      // State transitions happen only via explicit evidence (login.ts).
       const toolArgs = toolCall.arguments as Record<string, unknown>;
 
-      // Detect login success: navigating to a non-login URL means login worked
+      // Block re-login navigation ONLY when authenticated (evidence-confirmed)
       if (toolCall.name === "browser_navigate" || toolCall.name === "navigate_to") {
         const navUrl = String(toolArgs.url ?? "");
-        const loginConfirmed = context.state.get("loginConfirmed") as boolean ?? false;
-
-        if (!loginConfirmed && !navUrl.toLowerCase().includes("login")) {
-          // Agent navigated to a non-login page — login was successful
-          context.state.set("loginConfirmed", true);
-          // Block the original target URL if it's a login page
-          const targetUrl = context.target.url;
-          if (targetUrl.toLowerCase().includes("login")) {
-            const blocked = (context.state.get("blockedUrls") as string[]) ?? [];
-            if (!blocked.includes(targetUrl)) blocked.push(targetUrl);
-            context.state.set("blockedUrls", blocked);
+        const loginState = context.state.get("loginGuard") as LoginGuardState | undefined;
+        if (loginState) {
+          const blockCheck = shouldBlockNavigation(loginState, navUrl);
+          if (blockCheck.blocked) {
+            logger.warn(`[LoginGuard] BLOCKED ${toolCall.name}: ${navUrl} (status: ${loginState.status})`);
+            const errorMsg = `BLOCKED: ${blockCheck.reason}`;
+            sessionLog.append("tool/result", {
+              turn: context.turnCount, step, callId: toolCall.id,
+              name: toolCall.name, success: false, error: errorMsg, data: null, duration: 0,
+            });
+            toolResults.push({ toolCallId: toolCall.id, name: toolCall.name, success: false, error: errorMsg, data: null });
+            await eventBus.emit(AgentToolCallEvent, {
+              sessionId: context.sessionId, turnNumber: context.turnCount, toolName: toolCall.name, input: toolCall.arguments });
+            await eventBus.emit(AgentToolResultEvent, {
+              sessionId: context.sessionId, turnNumber: context.turnCount, toolName: toolCall.name, success: false, duration: 0 });
+            continue;
           }
-          logger.info(`[LoginGuard] Login confirmed. Blocking: ${targetUrl}`);
         }
+      }
 
-        // Block re-login navigation
-        if (loginConfirmed && navUrl.toLowerCase().includes("login")) {
-          logger.warn(`[LoginGuard] BLOCKED ${toolCall.name}: ${navUrl}`);
-          const errorMsg = `BLOCKED: You are already logged in. Do NOT navigate to login pages. Navigate to the target module instead. URL: "${navUrl}"`;
-          sessionLog.append("tool/result", {
-            turn: context.turnCount, step, callId: toolCall.id,
-            name: toolCall.name, success: false, error: errorMsg, data: null, duration: 0,
-          });
-          toolResults.push({ toolCallId: toolCall.id, name: toolCall.name, success: false, error: errorMsg, data: null });
-          await eventBus.emit(AgentToolCallEvent, {
-            sessionId: context.sessionId, turnNumber: context.turnCount, toolName: toolCall.name, input: toolCall.arguments });
-          await eventBus.emit(AgentToolResultEvent, {
-            sessionId: context.sessionId, turnNumber: context.turnCount, toolName: toolCall.name, success: false, duration: 0 });
-          continue;
+      // Record credential submission (fill_form/type on login fields)
+      if (toolCall.name === "browser_fill_form" || toolCall.name === "browser_type") {
+        const loginState = context.state.get("loginGuard") as LoginGuardState | undefined;
+        if (loginState && (loginState.status === "login_page_detected" || loginState.status === "required")) {
+          const argsStr = JSON.stringify(toolArgs).toLowerCase();
+          const isLoginFields = argsStr.includes("password") || argsStr.includes("密码") ||
+            argsStr.includes("username") || argsStr.includes("用户");
+          if (isLoginFields) {
+            const updated = recordCredentialsSubmitted(loginState, context.turnCount);
+            context.state.set("loginGuard", updated);
+            logger.info(`[LoginGuard] Credentials submitted → ${describeLoginState(updated)}`);
+          }
         }
       }
 
@@ -690,6 +1026,29 @@ export class AgentLoop {
         context.workflowState
       );
 
+      // ── LoginGuard: Update login state from evidence ──
+      // Requirement detection: from initial page observation (navigate or snapshot)
+      const loginState = context.state.get("loginGuard") as LoginGuardState | undefined;
+      if (loginState) {
+        const snapshotText = (result.data as { text?: string } | undefined)?.text ?? '';
+
+        if (toolCall.name === "browser_navigate" || toolCall.name === "browser_snapshot") {
+          const url = context.workflow.currentPageUrl || context.target.url;
+          const before = loginState.status;
+          let updated = detectLoginRequirement(loginState, url, snapshotText, context.turnCount);
+          // Confirmation check: after credentials submitted, look for success evidence
+          if (updated.status === "login_in_progress" && toolCall.name === "browser_snapshot") {
+            updated = checkLoginConfirmation(updated, url, snapshotText, context.turnCount);
+          }
+          if (updated.status !== before) {
+            context.state.set("loginGuard", updated);
+            logger.info(`[LoginGuard] ${before} → ${describeLoginState(updated)}`);
+          } else {
+            context.state.set("loginGuard", updated);
+          }
+        }
+      }
+
       // ── Action Verification: Validate action had intended effect ──
       const actionTools = ['browser_click', 'browser_type', 'browser_fill_form',
         'browser_navigate', 'browser_select_option', 'browser_check',
@@ -761,6 +1120,113 @@ export class AgentLoop {
           });
         }
       }
+
+      // ── Phase 4: Update coverage from action ──
+      if (context.workflow.coverageModel && context.workflow.currentCoverageTarget) {
+        // Only interaction tools (not navigation) should trigger coverage update
+        const interactionTools = [
+          'browser_click', 'browser_type', 'browser_fill_form',
+          'browser_select_option', 'browser_check', 'browser_uncheck',
+          'browser_press_key',
+        ];
+        if (interactionTools.includes(toolCall.name)) {
+          const target = context.workflow.currentCoverageTarget;
+          const toolArgs = toolCall.arguments as Record<string, unknown>;
+
+          // Use resolveActionFeature() to find which feature this action corresponds to.
+          // This tries ref → name → normalized matching across ALL features in the model.
+          const match = resolveActionFeature(toolCall.name, toolArgs, context.workflow.coverageModel);
+
+          const targetRef = String(toolArgs.target ?? '');
+          const elementDesc = String(toolArgs.element ?? '');
+
+          if (match && result.success) {
+            // Matched a known feature — update its coverage.
+            // Key: we update the MATCHED feature, not necessarily the current target.
+            // This prevents false coverage when target and action don't align.
+            const matchedFeature = match.feature;
+
+            // Track if the current target was matched (for stagnation detection)
+            if (matchedFeature.key === target.featureKey) {
+              targetMatchedThisTurn = true;
+            }
+            const outcome: ScenarioOutcome = 'pass';
+
+            // Find the scenario to update — prefer the target's scenarioType if the
+            // matched feature IS the target; otherwise use 'normal' as default.
+            const scenarioType = (matchedFeature.key === target.featureKey)
+              ? target.scenarioType
+              : 'normal';
+
+            // Find the feature in the model to update its scenario
+            for (const mod of context.workflow.coverageModel.modules) {
+              for (const surf of mod.surfaces) {
+                const feat = surf.features.find(f => f.key === matchedFeature.key);
+                if (feat) {
+                  updateScenario(feat, scenarioType, outcome, {
+                    action: toolCall.name,
+                    result: outcome,
+                    turn: context.turnCount,
+                    timestamp: Date.now(),
+                  });
+                  updateSurfaceCoverageStatus(surf, context.workflow.coveragePolicy!);
+                  break;
+                }
+              }
+            }
+
+            logger.info(`[ACTION] ${toolCall.name} → ${matchedFeature.key} "${matchedFeature.name}" method=${match.method} confidence=${match.confidence.toFixed(2)} scenario=${scenarioType}`);
+
+            // Check if coverage is now complete
+            if (context.workflow.coveragePolicy) {
+              const finish = shouldFinishTesting(
+                context.workflow.coverageModel,
+                context.workflow.coveragePolicy,
+                { turnsUsed: context.turnCount }
+              );
+              if (finish.shouldFinish) {
+                context.workflow.coverageComplete = true;
+                logger.info(`[EXIT] coverage complete: ${finish.reason} (rate ${(finish.details.coverageRate * 100).toFixed(0)}%)`);
+                sessionLog.append('system/note', {
+                  note: `[Coverage] Complete: ${finish.reason}. Rate: ${(finish.details.coverageRate * 100).toFixed(0)}%`,
+                });
+              }
+            }
+          } else {
+            // No reliable match — do NOT mark any feature as tested.
+            // This prevents false coverage from incorrect matching.
+            const matchInfo = match
+              ? `method=${match.method} confidence=${match.confidence.toFixed(2)} (below threshold)`
+              : 'no feature matched';
+            logger.info(`[ACTION] ${toolCall.name} "${elementDesc}" unmatched (${matchInfo}) — target ${target.featureKey} unchanged`);
+
+            // Any successful interaction on same surface = some discovery progress
+            if (result.success) {
+              context.workflow.coverageModel.discovery.stableTurns++;
+            }
+          }
+        }
+      }
+    }
+
+    // ── Target Stagnation Detection ──
+    // If the current target was NOT matched by any action this turn, increment
+    // the stagnation counter. After 3 consecutive misses, skip the target to
+    // prevent infinite loops where the LLM can't/won't test a selected target.
+    if (context.workflow.currentCoverageTarget && context.workflow.coverageModel) {
+      if (targetMatchedThisTurn) {
+        context.workflow.targetStagnationCount = 0;
+      } else {
+        context.workflow.targetStagnationCount++;
+        if (context.workflow.targetStagnationCount >= 3) {
+          const skippedKey = context.workflow.currentCoverageTarget.featureKey;
+          if (!context.workflow.skippedTargets.includes(skippedKey)) {
+            context.workflow.skippedTargets.push(skippedKey);
+            logger.warn(`[TARGET] Skipping stagnated target: ${skippedKey} (selected 3x without match)`);
+          }
+          context.workflow.targetStagnationCount = 0;
+        }
+      }
     }
 
     // ── Workflow: Check state transitions ──
@@ -784,10 +1250,10 @@ export class AgentLoop {
         context.workflow.invariantViolations.push(
           `${previousState}→${context.workflowState}: ${transitionResult.invariantViolation}`
         );
-        logger.warn(`[Workflow] Invariant violation: ${transitionResult.invariantViolation}`);
+        logger.warn(`[STATE] invariant violation: ${transitionResult.invariantViolation}`);
       }
-      logger.info(`[Workflow] ${transitionResult.message} (${previousState} → ${context.workflowState})`);
-      logger.info(`[Workflow] Coverage: [${context.workflow.traversedTransitions.join(', ')}]`);
+      logger.info(`[STATE] ${previousState} → ${context.workflowState} (${transitionResult.message})`);
+      logger.debug(`[STATE] transitions traversed: [${context.workflow.traversedTransitions.join(', ')}]`);
       sessionLog.append("system/note", {
         note: `[Workflow] ${previousState} → ${context.workflowState} | coverage: [${context.workflow.traversedTransitions.join(', ')}]`,
       });
@@ -799,11 +1265,11 @@ export class AgentLoop {
         message: transitionResult.message,
       });
 
-      // ── Auto-generate test plan when entering TEST state ──
-      if (context.workflowState === WorkflowState.TEST && context.workflow.testPlan.length === 0) {
-        logger.info('[Workflow] Entering TEST state — analyzing page via snapshot...');
+      // ── Phase 4: Initialize Coverage Model when entering TEST state ──
+      if (context.workflowState === WorkflowState.TEST && !context.workflow.coverageInitialized) {
+        logger.info('[COVERAGE] entering TEST state — initializing coverage model');
         try {
-          // Use MCP browser_snapshot to analyze page complexity
+          // Take initial snapshot
           const snapshotTool = context.toolRegistry.get('browser_snapshot');
           let snapshotText = '';
           if (snapshotTool) {
@@ -813,95 +1279,74 @@ export class AgentLoop {
             });
             if (snapResult.success && snapResult.data) {
               snapshotText = String((snapResult.data as any).text ?? '');
+              context.workflow.lastRawSnapshot = snapshotText;
             }
           }
 
-          // Estimate complexity from snapshot text length
-          // Aria snapshot: ~50 chars per interactive element roughly
-          const estimatedElements = snapshotText ? Math.max(5, Math.floor(snapshotText.length / 50)) : 20;
-          const hasForms = snapshotText.toLowerCase().includes('textbox') || snapshotText.toLowerCase().includes('combobox');
-          const hasTables = snapshotText.toLowerCase().includes('table') || snapshotText.toLowerCase().includes('grid');
+          // Create coverage model and policy
+          const coverageModel = createCoverageModel();
+          const testType = (context.config.testType ?? 'smoke') as CoverageTestType;
+          const coveragePolicy = COVERAGE_POLICIES[testType];
 
-          let targetTestCount: number;
-          if (estimatedElements < 10) {
-            targetTestCount = 10;
-          } else if (estimatedElements < 30) {
-            targetTestCount = 15 + Math.floor((estimatedElements - 10) / 2);
-          } else if (estimatedElements < 60) {
-            targetTestCount = 25 + Math.floor((estimatedElements - 30) / 3);
-          } else {
-            targetTestCount = 35 + Math.floor((estimatedElements - 60) / 5);
+          context.workflow.coverageModel = coverageModel;
+          context.workflow.coveragePolicy = coveragePolicy;
+
+          // Register initial surface from snapshot
+          if (snapshotText) {
+            const signature = extractSurfaceSignature(snapshotText, context.workflow.currentPageUrl);
+            const surfaceKey = generateSurfaceKey(signature);
+            const moduleKey = generateModuleKey(signature);
+            const moduleName = generateModuleName(signature);
+
+            registerModule(coverageModel, moduleKey, moduleName);
+            const surface = registerSurface(
+              coverageModel, moduleKey, surfaceKey,
+              context.workflow.currentPageUrl, signature.title
+            );
+            // Store signature hash for surface change detection
+            surface.signatureHash = signature.hash;
+
+            // Discover features from the snapshot
+            discoverFeaturesFromSnapshot(snapshotText, surface);
+            coverageModel.currentSurfaceKey = surfaceKey;
+
+            // Calculate intent relevance for all features based on user instructions
+            const instructions = context.config.instructions as string | undefined;
+            calculateAllIntentRelevance(coverageModel, instructions);
+
+            logger.info(`[SURFACE] ${surfaceKey}: ${surface.features.length} features discovered`);
+            if (instructions) {
+              const relevantFeatures = surface.features
+                .filter(f => f.intentRelevance && f.intentRelevance.score > 0)
+                .sort((a, b) => (b.intentRelevance?.score ?? 0) - (a.intentRelevance?.score ?? 0));
+              const highCount = relevantFeatures.filter(f => (f.intentRelevance?.score ?? 0) > 0.5).length;
+              logger.info(`[TARGET] intent relevance: ${highCount}/${surface.features.length} features`);
+              for (const f of relevantFeatures.slice(0, 5)) {
+                logger.debug(`[TARGET]   ${f.name} (${f.type}): intent=${f.intentRelevance?.score.toFixed(2)}`);
+              }
+            }
+            logger.debug(`[COVERAGE] policy: ${testType}, depth: ${JSON.stringify(coveragePolicy.scenarioDepth)}`);
           }
-          targetTestCount = Math.min(targetTestCount, 50);
 
-          logger.info(`[Workflow] Page: ~${estimatedElements} elements, forms=${hasForms}, tables=${hasTables}, targeting ${targetTestCount} tests`);
+          context.workflow.coverageInitialized = true;
 
-          const planPrompt = `You are testing a module at: ${context.target.url}
-
-Page analysis from accessibility snapshot:
-- ~${estimatedElements} interactive elements found
-- ${hasForms ? 'Contains forms (textbox/combobox elements detected)' : 'No forms detected'}
-- ${hasTables ? 'Contains data tables/grids' : 'No data tables detected'}
-- Snapshot length: ${snapshotText.length} chars
-
-Generate a comprehensive test plan with ${targetTestCount} specific test actions. Cover:
-- All major UI components and their interactions
-- Form validation (if forms exist)
-- Data display and navigation (if tables exist)
-- Error handling and edge cases
-- Business logic workflows
-
-Each test should be:
-- A concrete, executable operation using browser_click/browser_fill_form/browser_type with refs
-- Clearly describe what to do and what to verify
-- Ordered logically (setup → execute → verify → cleanup)
-
-Output ONLY a JSON array:
-[{"description": "Verify page loads with correct title and layout", "completed": false}, ...]
-
-Test plan:`;
-
-          const planStream = context.llm.stream({
-            model: requestConfig.model,
-            messages: [{ role: 'user', content: planPrompt }],
-            temperature: 0.3,
-            signal: context.abortSignal,
+          // Check if already complete (e.g., no features found)
+          const finishDecision = shouldFinishTesting(coverageModel, coveragePolicy, {
+            turnsUsed: context.turnCount,
           });
-
-          const planAssembler = new StreamAssembler();
-          for await (const chunk of planStream) {
-            planAssembler.push(chunk);
+          if (finishDecision.shouldFinish) {
+            context.workflow.coverageComplete = true;
+            logger.info(`[EXIT] already complete: ${finishDecision.reason}`);
           }
-          const planText = planAssembler.partialContent;
 
-          const jsonMatch = planText.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const plan = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(plan) && plan.length > 0) {
-              context.workflow.testPlan = plan.map((item: any) => ({
-                description: item.description || String(item),
-                completed: false,
-              }));
-              logger.info(`[Workflow] Test plan generated: ${context.workflow.testPlan.length} items`);
-              sessionLog.append("system/note", {
-                note: `[Test Plan] Generated ${context.workflow.testPlan.length} test items:\n${context.workflow.testPlan.map((t, i) => `${i + 1}. ${t.description}`).join('\n')}`,
-              });
-            }
-          }
+          sessionLog.append('system/note', {
+            note: `[Coverage] Initialized: ${testType} policy, ${coverageModel.modules.reduce((s, m) => s + m.surfaces.reduce((s2, sur) => s2 + sur.features.length, 0), 0)} features tracked`,
+          });
         } catch (err) {
-          logger.warn(`[Workflow] Failed to generate test plan: ${err instanceof Error ? err.message : String(err)}`);
-          context.workflow.testPlan = [
-            { description: 'Take browser_snapshot and document page structure', completed: false },
-            { description: 'Verify all navigation links work', completed: false },
-            { description: 'Test all buttons and their actions', completed: false },
-            { description: 'Validate form inputs if present', completed: false },
-            { description: 'Check data display and formatting', completed: false },
-            { description: 'Test search/filter functionality if available', completed: false },
-            { description: 'Verify error handling and validation messages', completed: false },
-            { description: 'Test pagination if data tables exist', completed: false },
-            { description: 'Check responsive layout and UI consistency', completed: false },
-            { description: 'Verify business logic workflows', completed: false },
-          ];
+          logger.warn(`[COVERAGE] failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
+          // Fallback: mark as initialized but let legacy testPlan path handle it
+          context.workflow.coverageInitialized = true;
+          context.workflow.coverageComplete = true;
         }
       }
     }

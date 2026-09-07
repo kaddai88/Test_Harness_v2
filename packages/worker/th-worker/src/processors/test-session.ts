@@ -45,6 +45,26 @@ export interface TestSessionJobProcessorOptions {
   wsHandler?: { broadcast(event: { type: string; [key: string]: unknown }): void };
 }
 
+/**
+ * Worker log level from env: TH_LOG_LEVEL=debug enables debug output.
+ * Default info — session lifecycle, status changes, errors.
+ */
+const WORKER_LOG_LEVEL: "info" | "debug" =
+  (process.env.TH_LOG_LEVEL as "info" | "debug") === "debug" ? "debug" : "info";
+
+function wlog(msg: string): void {
+  console.log(`[Worker] ${msg}`);
+}
+function wdebug(msg: string): void {
+  if (WORKER_LOG_LEVEL === "debug") console.log(`[Worker] ${msg}`);
+}
+function wwarn(msg: string): void {
+  console.warn(`[Worker] ⚠ ${msg}`);
+}
+function werror(msg: string): void {
+  console.error(`[Worker] ✗ ${msg}`);
+}
+
 export class TestSessionJobProcessor implements JobProcessor<JobData> {
   private readonly repos: DatabaseRepositories;
   private readonly llm: LLMProvider;
@@ -57,7 +77,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
   }
 
   private broadcast(type: string, sessionId: string, data: Record<string, unknown>): void {
-    console.log(`[Worker] broadcast ${type} for ${sessionId.slice(0,8)}`);
+    wdebug(`broadcast ${type} for ${sessionId.slice(0,8)}`);
     this.wsHandler?.broadcast({ type, sessionId, ...data });
   }
 
@@ -82,10 +102,10 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       const browserProvider = new PlaywrightBrowserProvider({ executablePath });
       container.register(BrowserDriverDefinition, valueProvider(browserProvider));
       await browserProvider.launch({ headless: true });
-      console.log('[Worker] Using local Playwright');
+      wdebug('using local Playwright');
       return true;
     } catch (err) {
-      console.log('[Worker] Browser not available:', err instanceof Error ? err.message : String(err));
+      wdebug('browser not available: ' + (err instanceof Error ? err.message : String(err)));
       return false;
     }
   }
@@ -110,14 +130,13 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         name: siteHostname,
         baseUrl: siteHostname,
       });
-      console.log(`[Worker] Created site profile: ${siteHostname} (${siteProfile.id})`);
+      wlog(`created site profile: ${siteHostname} (${siteProfile.id})`);
     }
 
     // Update status to planning
     await this.repos.sessions.updateStatus(sessionId, "planning");
     await this.repos.sessions.updateStartedAt(sessionId);
     this.broadcast("session:update", sessionId, { status: "planning", message: "AI is generating test plan..." });
-
     const collectedFindings: Finding[] = [];
     const collectedActivities: Record<string, unknown>[] = [];
     const disposables: Array<{ dispose(): void }> = [];
@@ -136,21 +155,23 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         for (const tool of mcpTools) {
           registry.register(tool);
         }
-        console.log(`[Worker] MCP mode: ${mcpTools.length} tools registered`);
-        this.broadcast("session:update", sessionId, { status: "executing", message: "MCP browser ready" });
+        wlog(`MCP mode: ${mcpTools.length} tools registered`);
       } else {
         // Legacy mode: launch local Playwright + use wrapper tools
         const browserReady = await this.launchBrowser(container);
-        if (browserReady) {
-          this.broadcast("session:update", sessionId, { status: "executing", message: "Browser ready" });
-        } else {
-          this.broadcast("session:update", sessionId, { status: "executing", message: "Crawling without browser" });
+        if (!browserReady) {
+          wlog('crawling without browser');
         }
         for (const tool of createAllTools(container)) {
           registry.register(tool);
         }
       }
       registry.register(createReportFindingTool(collectedFindings, sessionId));
+
+      // ── Status: planning → running ──
+      // Tooling is ready; the AgentLoop is about to start actual test execution.
+      await this.repos.sessions.updateStatus(sessionId, "running");
+      this.broadcast("session:update", sessionId, { status: "running", message: "Test execution started" });
 
       // ── Build SessionTarget / SessionConfig from session ──
       const targetConfig = (session.targetConfig ?? {}) as Record<string, unknown>;
@@ -166,6 +187,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         maxTurns: typeof rawConfig.maxTurns === "number" ? rawConfig.maxTurns : 99,
         maxRetriesPerAction: typeof rawConfig.maxRetriesPerAction === "number" ? rawConfig.maxRetriesPerAction : 3,
         instructions: session.metadata?.instructions as string | undefined ?? instructions,
+        testType: typeof rawConfig.testType === "string" ? rawConfig.testType as any : undefined,
         llm: {
           provider: this.llm.id,
           model:
@@ -265,7 +287,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         try {
           const session = await this.repos.sessions.findById(sessionId);
           if (session?.status === "cancelled") {
-            console.log(`[Worker] Session ${sessionId} cancelled by user, aborting...`);
+            wlog(`session ${sessionId} cancelled by user, aborting`);
             abortController.abort();
             clearInterval(cancelCheck);
           }
@@ -313,7 +335,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
           result.summary ?? ""
         );
       } catch (err) {
-        console.error('[Worker] Failed to generate execution summary:', err);
+        werror('failed to generate execution summary: ' + (err instanceof Error ? err.message : String(err)));
       }
 
       await this.repos.sessions.updateStatus(sessionId, status);
@@ -362,7 +384,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
           [] // No SmartLocator cache in MCP mode
         );
 
-        console.log(`[Worker] Site profile enrichment: ${enrichment.summary}`);
+        wdebug(`site profile enrichment: ${enrichment.summary}`);
         // Always save the enriched profile back to disk
         const enrichedData = {
           name: siteProfileForEnrich?.name ?? extractHostname(targetUrl),
@@ -372,7 +394,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         };
         saveSiteProfile(enrichedData);
       } catch (err) {
-        console.warn(`[Worker] Site profile enrichment failed:`, err);
+        wwarn(`site profile enrichment failed: ${err}`);
       }
 
       // ── Sync cognition data from files to DB ──
@@ -381,7 +403,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       try {
         await syncCognitionFilesToDB(this.repos, siteProfile.id, sessionId, targetUrl);
       } catch (err) {
-        console.warn(`[Worker] Cognition sync to DB failed:`, err);
+        wwarn(`cognition sync to DB failed: ${err}`);
       }
 
       // Increment test count for this site
@@ -434,6 +456,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
     }> = [];
 
     let currentTestCase: typeof testCases[0] | null = null;
+    let currentToolInput: Record<string, unknown> | undefined;
 
     for (const activity of activities) {
       if (activity.kind === 'tool_call') {
@@ -441,24 +464,28 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         const input = activity.input as Record<string, unknown> | undefined;
 
         // Start a new test case for significant actions
-        if (['browser_click', 'browser_type', 'browser_fill_form', 'browser_navigate', 'browser_select_option'].includes(toolName)) {
+        if (['browser_click', 'browser_type', 'browser_fill_form', 'browser_navigate', 'browser_select_option', 'browser_check', 'browser_uncheck'].includes(toolName)) {
           // Save previous test case
           if (currentTestCase) {
             testCases.push(currentTestCase);
           }
 
-          // Create new test case
+          // Create new test case with basic description
           let actionDesc = '';
           if (toolName === 'browser_click') {
-            actionDesc = `Click: ${input?.element ?? 'unknown'}`;
+            actionDesc = `Click: ${input?.element ?? input?.ref ?? 'unknown element'}`;
           } else if (toolName === 'browser_type') {
-            actionDesc = `Type "${input?.text ?? ''}" into ${input?.element ?? 'unknown'}`;
+            actionDesc = `Type "${input?.text ?? ''}" into ${input?.element ?? input?.ref ?? 'unknown field'}`;
           } else if (toolName === 'browser_fill_form') {
-            actionDesc = 'Fill form';
+            actionDesc = 'Fill form with data';
           } else if (toolName === 'browser_navigate') {
-            actionDesc = `Navigate to ${input?.url ?? 'unknown'}`;
+            actionDesc = `Navigate to ${input?.url ?? 'unknown URL'}`;
           } else if (toolName === 'browser_select_option') {
-            actionDesc = `Select option: ${input?.value ?? 'unknown'}`;
+            actionDesc = `Select option "${input?.value ?? input?.option ?? 'unknown'}" from ${input?.element ?? input?.ref ?? 'dropdown'}`;
+          } else if (toolName === 'browser_check') {
+            actionDesc = `Check checkbox: ${input?.element ?? input?.ref ?? 'unknown'}`;
+          } else if (toolName === 'browser_uncheck') {
+            actionDesc = `Uncheck checkbox: ${input?.element ?? input?.ref ?? 'unknown'}`;
           }
 
           currentTestCase = {
@@ -466,6 +493,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
             action: actionDesc,
             result: 'pending',
           };
+          currentToolInput = input;
         }
       } else if (activity.kind === 'tool_result' && currentTestCase) {
         // Update test case with result and screenshot
@@ -480,6 +508,53 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
     // Add last test case
     if (currentTestCase) {
       testCases.push(currentTestCase);
+    }
+
+    // Use LLM to generate better action descriptions based on context
+    if (testCases.length > 0) {
+      try {
+        const descriptionPrompt = `You are analyzing test execution logs. Based on the sequence of actions below, generate a concise, descriptive summary for EACH action that explains what was done and its purpose.
+
+Current descriptions:
+${testCases.map((tc, i) => `${i + 1}. ${tc.action} [${tc.result}]`).join('\n')}
+
+Agent's overall summary:
+${finalSummary}
+
+For each action, provide a 1-sentence description that includes:
+- What specific element/feature was interacted with
+- What the action accomplished (e.g., "opened the project creation form", "submitted the login credentials")
+- Any notable outcome
+
+Respond with a JSON array of strings, one per action:
+["description 1", "description 2", ...]
+
+Respond with ONLY the JSON array, no markdown.`;
+
+        const response = await this.llm.complete({
+          model: (this.llm as any).defaultModel ?? 'qwen-plus',
+          messages: [{ role: 'user', content: descriptionPrompt }],
+          temperature: 0.3,
+          maxTokens: 2000,
+        });
+
+        const content = response.content.trim();
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const descriptions = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(descriptions)) {
+            for (let i = 0; i < Math.min(descriptions.length, testCases.length); i++) {
+              const desc = descriptions[i];
+              const testCase = testCases[i];
+              if (desc && typeof desc === 'string' && testCase) {
+                testCase.action = desc;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        wwarn('LLM action description generation failed, using basic descriptions: ' + (err instanceof Error ? err.message : String(err)));
+      }
     }
 
     // Generate overview and conclusion using LLM
@@ -519,7 +594,7 @@ Respond with ONLY the JSON object, no markdown.`;
         conclusion = parsed.conclusion ?? '';
       }
     } catch (err) {
-      console.error('[Worker] LLM summary generation failed:', err);
+      werror('LLM summary generation failed: ' + (err instanceof Error ? err.message : String(err)));
     }
 
     return {
