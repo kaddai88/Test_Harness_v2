@@ -4,7 +4,7 @@
 > 执行浏览器操作、实时流式推送结果。
 
 ![CI](https://github.com/kaddai88/Test_Harness_v2/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-34%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen)
 ![Packages](https://img.shields.io/badge/packages-18-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-339933)
 ![pnpm](https://img.shields.io/badge/pnpm-10-F69220)
@@ -36,6 +36,22 @@ Test-Harness 是一个生产级的、AI 驱动的网站测试平台，采用 Typ
 - **多 LLM 提供商** — OpenAI 兼容 API、Ollama（本地）、DeepSeek，支持故障转移
 - **完整 Web 平台** — REST API + WebSocket + React Dashboard
 - **生产就绪** — 优雅停机、速率限制、Docker 部署、CI/CD
+
+### Coverage-Driven 测试架构
+
+> **Coverage Model 决定"测什么"，Planner 决定"怎么测"，Policy 决定"何时结束"。**
+> （commit 5f6eacf — 详见 [STATE-MACHINE.md](./docs/STATE-MACHINE.md)）
+
+核心四概念严格分离：
+
+| 概念 | 回答的问题 | 类型 |
+|------|-----------|------|
+| **Intent Role** | 本次任务与 feature 的关系 | `primary/prerequisite/supporting/incidental/irrelevant` |
+| **Intrinsic Priority** | Feature 本身的重要性 | `critical/high/normal/low` |
+| **Coverage Scope** | 测多少 | `intent/comprehensive/core/all` |
+| **Target Selection** | 先测谁 | 分层：scope → role → priority → gap → risk |
+
+`TestIntent.primaryModules`（如 `"项目集"`）在页面未出现时保持 pending，目标 surface 出现后通过 `assignIntentRoles()` 晋升为 primary（已 E2E 验证：登录页 primary=0 → 业务页 primary=18）。
 
 ### 当前配置
 

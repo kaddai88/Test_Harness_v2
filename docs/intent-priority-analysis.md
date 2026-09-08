@@ -1,3 +1,20 @@
+# Intent 打分与 Priority 定义：完整流程分析（历史参考）
+
+> **状态**: 本文档描述的分析框架已被 commit `5f6eacf` 的 **Intent Model 重构**取代。
+> 保留作为问题发现记录。当前架构见 [STATE-MACHINE.md](./STATE-MACHINE.md) 与 `coverage.ts` 的
+> `TestIntent` / `IntentRole` / `CoverageScope` 实现。
+>
+> 下文 "改进方向" 中以下方案已被明确否决，不要再提出：
+> 1. LLM 逐 feature 打 priority（与 Coverage = source of truth 冲突）
+> 2. 正则硬编码中文句式识别模块（表达太多样）
+> 3. 80% 覆盖率定义 Acceptance scope（80% 是结果不是语义）
+> 4. 降低 resolver 阈值换 skip 数量（false positive 比效率损失危险）
+>
+> 已验证的正确方向：Intent Role 语义化、pending intent 持久化、
+> ALIGN 四 verdict 决策树、deterministic→template→LLM 逐级下沉。
+
+---
+
 # Intent 打分与 Priority 定义：完整流程分析
 
 ## 📊 完整流程图

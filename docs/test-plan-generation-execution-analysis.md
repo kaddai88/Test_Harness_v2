@@ -2,12 +2,16 @@
 
 ## 执行摘要
 
-本文档记录了 Test-Harness 系统测试计划生成与执行机制的深度分析、问题发现、修复实施和验证过程。通过两轮迭代（P0-P1-E），系统从"覆盖率引擎是死代码"演进为"真正的 coverage-driven 测试系统"，测试通过率从 0% 提升到 100%，且实现了更智能的覆盖范围控制和更诚实的状态追踪。
+本文档记录了 Test-Harness 系统测试计划生成与执行机制的深度分析、问题发现、修复实施和验证过程。通过三轮迭代（P0-P2 Phase 1），系统从"覆盖率引擎是死代码"演进为"真正的 coverage-driven 测试系统"，测试通过率从 0% 提升到 173 个测试全部通过，并实现了 Intent Model 四概念分离、ALIGN 诊断链与 snapshot lifecycle 版本一致性。
 
-**关键成果：**
-- 198 个测试全部通过（从 0 到 198）
+**当前基线（commit 5f6eacf）：**
+- 173/173 测试通过（12 文件）
+- Intent Model：`TestIntent.primaryModules` 在页面未出现时保持 pending，目标 surface 出现后晋升 primary
+- Scope 重定义：`all/comprehensive/core/intent` 消费 role，不解释意图
+- ALIGN 四 verdict 决策树（no_ref/ref_unknown/ref_drift/resolver_miss）
+- snapshotVersion + decided@vN 时序诊断
 - 消除 LLM stub 滥用：只有 'unknown' 类型使用 LLM 规划器
-- 实现 scope-aware coverage：smoke 测试从测试 26 个链接优化到 3 个目标
+- E2E 验证：Zentao 验收（primary 0→18，skip 14→3，coverage_target_met 正常退出）
 - 建立 honest skipped coverage：跳过的目标有明确记录
 - 完成 planner coverage completeness：所有已知类型都有真实计划
 
