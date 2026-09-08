@@ -38,9 +38,10 @@ export type ScenarioStatus =
   | 'not_applicable'
   | 'not_tested'
   | 'planned'
-  | 'tested';
+  | 'tested'
+  | 'skipped';
 
-export type ScenarioOutcome = 'pass' | 'fail' | 'blocked';
+export type ScenarioOutcome = 'pass' | 'fail' | 'blocked' | 'skipped';
 
 export interface ScenarioCoverage {
   status: ScenarioStatus;
@@ -54,24 +55,69 @@ export interface Evidence {
   result: ScenarioOutcome;
   turn: number;
   timestamp: number;
+  /** Why this outcome happened (e.g. skip reason) */
+  reason?: string;
 }
 
-// ─── Intent Relevance ────────────────────────────────────────────────────────
+// ─── Intent Model ────────────────────────────────────────────────────────────
 
 /**
- * How relevant a feature is to the user's stated testing intent.
- * Independent from PriorityInfo — priority is about business importance,
- * relevance is about "did the user specifically ask to test this?"
+ * Intent role — WHY this feature matters to the current test task.
+ * This is the PRIMARY signal for target selection; numeric score is secondary.
  *
- * Example:
- *   Feature "搜索框"   → priority: normal,  intentRelevance: 1.0 (user asked for search)
- *   Feature "删除按钮" → priority: critical, intentRelevance: 0.0 (user didn't mention delete)
+ *   primary      — the user explicitly asked to test this (target module/feature)
+ *   prerequisite — required to reach/verify the primary target (e.g. login)
+ *   supporting   — functional element that may participate in testing, not demanded
+ *   incidental   — present on the page, unrelated to the task (navigation, decor)
+ *   irrelevant   — clearly unrelated (help, legal, decorative)
+ *
+ * Role answers "what job does this feature do in THIS test session",
+ * while PriorityInfo answers "how important is this feature in general".
+ * They are independent dimensions and must never be conflated.
+ */
+export type IntentRole =
+  | 'primary'
+  | 'prerequisite'
+  | 'supporting'
+  | 'incidental'
+  | 'irrelevant';
+
+/**
+ * How a feature relates to the user's stated testing intent.
+ * `role` carries the semantics; `score` is a derived convenience for
+ * sorting/logging and has no independent meaning.
  */
 export interface IntentRelevance {
-  score: number;          // 0 ~ 1
+  role: IntentRole;
+  score: number;          // derived from role (0 ~ 1)
+  confidence: number;     // 0 ~ 1 — how sure we are about the role
   source: 'user' | 'llm';
   matchedTerms?: string[];
   reason?: string;
+}
+
+/**
+ * Structured understanding of what the user wants tested.
+ * Extracted ONCE from the instruction text (deterministic extraction),
+ * then matched against discovered entities (modules/surfaces/features).
+ *
+ * Example — "使用 admin/Abcd.1234 登录系统，对模块"项目集"进行测试":
+ *   primaryModules: ["项目集"]
+ *   prerequisites:  ["登录"]
+ *   requiredActions: []
+ *   depth: "normal"
+ */
+export interface TestIntent {
+  /** Modules the user explicitly asked to test (e.g. "项目集") */
+  primaryModules: string[];
+  /** Specific features the user named (e.g. "搜索框") */
+  primaryFeatures: string[];
+  /** Prerequisites needed to reach the target (e.g. login) */
+  prerequisites: string[];
+  /** Actions requested within the target (e.g. CRUD verbs) */
+  requiredActions: string[];
+  /** Test depth implied by the instruction */
+  depth: 'smoke' | 'normal' | 'comprehensive';
 }
 
 export type FeatureType =
@@ -95,6 +141,19 @@ export type FeatureType =
 export type CoverageStatus = 'uncovered' | 'partial' | 'covered';
 export type ExecutionStatus = 'idle' | 'planning' | 'running' | 'completed' | 'blocked';
 
+/**
+ * Coverage scope — controls WHICH discovered features the policy requires testing.
+ * Scope is about COVERAGE SEMANTICS, not about understanding user intent
+ * (that is the Intent Model's job). Scope consumes intent roles + priorities.
+ *
+ *   all            — every discovered feature (Full)
+ *   comprehensive  — all business features (primary/prerequisite/supporting)
+ *                    minus incidental/irrelevant (Acceptance)
+ *   core           — intent primary + prerequisite + critical intrinsic (Confirmation)
+ *   intent         — primary + prerequisite only (Smoke)
+ */
+export type CoverageScope = 'all' | 'comprehensive' | 'core' | 'intent';
+
 // ─── Coverage Model ──────────────────────────────────────────────────────────
 
 export interface CoverageFeature {
@@ -103,9 +162,10 @@ export interface CoverageFeature {
   ref?: string;
   name: string;
   type: FeatureType;
+  /** Intrinsic business importance — "how important is this feature in general" */
   priority: PriorityInfo;
   scenarios: Record<ScenarioType, ScenarioCoverage>;
-  /** How relevant this feature is to the user's stated testing intent */
+  /** How this feature relates to the user's current test task (Intent Model) */
   intentRelevance?: IntentRelevance;
 }
 
@@ -113,6 +173,14 @@ export interface CoverageSurface {
   key: string;
   url?: string;
   title?: string;
+  /** Semantic headings/landmarks observed on this surface */
+  semanticLabels?: string[];
+  /** Intent binding for the current test session */
+  intent?: {
+    role: 'primary' | 'supporting' | 'incidental';
+    matchedBy?: string;
+    confidence?: number;
+  };
   /** Signature hash at time of registration — used for surface change detection */
   signatureHash?: string;
   priority: PriorityInfo;
@@ -124,8 +192,16 @@ export interface CoverageSurface {
 }
 
 export interface CoverageModule {
+  /** Technical stable identity (never replace with a business label) */
   key: string;
+  /** Semantic/business name when resolved from user intent or site metadata */
   name: string;
+  /** Intent binding persists even when the module is not on the current surface */
+  intent?: {
+    role: 'primary' | 'supporting' | 'incidental';
+    matchedBy?: string;
+    confidence?: number;
+  };
   priority: PriorityInfo;
   surfaces: CoverageSurface[];
 }
@@ -147,6 +223,8 @@ export interface CoverageModel {
 export interface CoveragePolicy {
   /** The test type this policy is for */
   testType: TestType;
+  /** Which discovered features are in required scope */
+  scope: CoverageScope;
   systemCoverage: {
     criticalModules: 'all' | 'none';
     majorModules: 'all' | 'most' | 'some' | 'minimal';
@@ -223,187 +301,270 @@ const PRIORITY_ORDER: Record<PriorityLevel, number> = {
   low: 1,
 };
 
-// ─── Intent Relevance Calculation ────────────────────────────────────────────
+// ─── Intent Extraction ───────────────────────────────────────────────────────
 
 /**
- * Keyword groups for intent matching.
- * Each entry maps a set of equivalent terms (CN + EN) to feature types they relate to.
- *
- * When the user's instructions contain any of these terms, features whose name
- * contains the term OR whose type matches the featureTypes list get a relevance score.
+ * PREREQUISITE_PATTERNS — deterministic detection of mandatory pre-steps.
+ * "登录系统"/"sign in" in instructions → login is a prerequisite, not the target.
  */
-const INTENT_KEYWORD_GROUPS: Array<{
-  terms: string[];
-  featureTypes: FeatureType[];
-  baseScore: number;
-}> = [
-  {
-    terms: ['搜索', 'search', '查询', 'query', '查找', '筛选', 'filter', 'find',
-            '百度一下'],
-    featureTypes: ['search', 'text-input', 'form', 'button'],
-    baseScore: 1.0,
-  },
-  {
-    terms: ['登录', 'login', 'signin', 'sign in', '认证', 'auth'],
-    featureTypes: ['form', 'text-input', 'button'],
-    baseScore: 1.0,
-  },
-  {
-    terms: ['注册', 'register', 'signup', 'sign up', '注册'],
-    featureTypes: ['form', 'text-input', 'button'],
-    baseScore: 1.0,
-  },
-  {
-    terms: ['创建', 'create', '新增', '添加', 'add', 'new'],
-    featureTypes: ['button', 'form', 'modal'],
-    baseScore: 0.9,
-  },
-  {
-    terms: ['编辑', 'edit', '修改', 'update', '更改'],
-    featureTypes: ['button', 'form', 'modal'],
-    baseScore: 0.9,
-  },
-  {
-    terms: ['删除', 'delete', '移除', 'remove', 'destroy', 'clear'],
-    featureTypes: ['button', 'modal'],
-    baseScore: 0.9,
-  },
-  {
-    terms: ['上传', 'upload', '导入', 'import', '文件', 'file'],
-    featureTypes: ['upload', 'button', 'form'],
-    baseScore: 0.9,
-  },
-  {
-    terms: ['下载', 'download', '导出', 'export'],
-    featureTypes: ['button', 'link'],
-    baseScore: 0.8,
-  },
-  {
-    terms: ['提交', 'submit', '保存', 'save', '确认', '确定', 'confirm'],
-    featureTypes: ['button', 'form'],
-    baseScore: 0.8,
-  },
-  {
-    terms: ['列表', 'list', '表格', 'table', '数据'],
-    featureTypes: ['table', 'pagination'],
-    baseScore: 0.7,
-  },
-  {
-    terms: ['导航', 'navigation', '菜单', 'menu', '侧栏', 'sidebar'],
-    featureTypes: ['navigation', 'link', 'tab'],
-    baseScore: 0.6,
-  },
-  {
-    terms: ['表单', 'form', '输入', 'input', '填写'],
-    featureTypes: ['form', 'text-input', 'number-input', 'checkbox', 'radio', 'dropdown'],
-    baseScore: 0.7,
-  },
+const PREREQUISITE_PATTERNS: Array<{ terms: string[]; prerequisite: string }> = [
+  { terms: ['登录', 'login', 'signin', 'sign in', '认证', 'auth'], prerequisite: '登录' },
 ];
 
+/** Action verbs that map to CRUD operations users may request */
+const ACTION_TERMS: Record<string, string[]> = {
+  create: ['创建', '新建', '添加', 'create', 'add', 'new'],
+  edit: ['编辑', '修改', 'edit', 'update', '更改'],
+  delete: ['删除', '移除', 'delete', 'remove', 'destroy'],
+  search: ['搜索', '查询', '查找', 'search', 'query', 'find', '筛选', 'filter'],
+};
+
+/** Non-module words that should never be treated as module names */
+const NON_MODULE_WORDS = new Set([
+  '系统', '功能', '页面', '流程', '操作', '模块', '测试', '验证', '检查',
+  '登录', '注册', '管理', '系统功能', '用户',
+]);
+
+/** Role → derived score (for sorting only; role is the semantic) */
+const ROLE_SCORE: Record<IntentRole, number> = {
+  primary: 1.0,
+  prerequisite: 0.9,
+  supporting: 0.5,
+  incidental: 0.2,
+  irrelevant: 0.0,
+};
+
+/** Role ranking used by layered target selection */
+const ROLE_ORDER: Record<IntentRole, number> = {
+  primary: 5,
+  prerequisite: 4,
+  supporting: 3,
+  incidental: 2,
+  irrelevant: 1,
+};
+
 /**
- * Calculate intent relevance for a feature given user instructions.
+ * extractTestIntent — deterministic extraction of the structured test intent
+ * from user instructions.
  *
- * Tiered scoring (returns highest score across all matches):
+ * Design: keyword groups are NOT used for per-feature scoring anymore.
+ * They only feed deterministic decisions:
+ *   1. Prerequisite detection (login etc.)
+ *   2. Required action verbs (create/delete/...)
+ *   3. Primary module CANDIDATES (quoted strings / verb objects)
  *
- *   Tier 1 — Direct name match (score = group.baseScore):
- *     Instructions contain a keyword AND feature.name also contains that keyword.
- *     Example: instructions="测试百度搜索", feature.name="搜索框"
- *     → "搜索" in both → score 1.0
- *
- *   Tier 2 — Feature name contains keyword (score = group.baseScore * 0.6):
- *     Feature name contains a keyword from the group, but instructions don't
- *     contain the feature name. This catches cases where the feature is obviously
- *     related to the intent by its name alone.
- *     Example: instructions="测试搜索功能", feature.name="搜索"
- *     → score 0.6
- *
- *   Tier 3 — Type-only match (score = group.baseScore * 0.3):
- *     Instructions contain a keyword AND feature.type matches the group's
- *     featureTypes list, but the feature NAME has no keyword overlap.
- *     This is a weak signal — many features might share the same type.
- *     Example: instructions="测试搜索", feature.name="用户名输入框", type="text-input"
- *     → score 0.3
- *
- * Returns undefined if no match found (relevance = 0).
+ * Module candidates are name-based CANDIDATES, not final decisions —
+ * the real signal is matching them against discovered module/surface/feature
+ * names in assignIntentRoles().
  */
-export function calculateIntentRelevance(
-  instructions: string | undefined,
-  featureName: string,
-  featureType: FeatureType
-): IntentRelevance | undefined {
+export function extractTestIntent(instructions: string | undefined): TestIntent | undefined {
   if (!instructions || instructions.trim().length === 0) return undefined;
-
   const instrLower = instructions.toLowerCase();
-  const nameLower = featureName.toLowerCase();
-  const matchedTerms: string[] = [];
-  let bestScore = 0;
-  let bestTier = 0;
 
-  for (const group of INTENT_KEYWORD_GROUPS) {
-    for (const term of group.terms) {
-      const termLower = term.toLowerCase();
-      const instrHasTerm = instrLower.includes(termLower);
-      const nameHasTerm = nameLower.includes(termLower);
+  // 1. Prerequisites: login etc.
+  const prerequisites: string[] = [];
+  for (const p of PREREQUISITE_PATTERNS) {
+    if (p.terms.some(t => instrLower.includes(t))) {
+      prerequisites.push(p.prerequisite);
+    }
+  }
 
-      if (instrHasTerm && nameHasTerm) {
-        // Tier 1: Direct name match — both instruction and feature name contain the keyword
-        const score = group.baseScore;
-        if (score > bestScore || (score === bestScore && 1 > bestTier)) {
-          bestScore = score;
-          bestTier = 1;
-        }
-        matchedTerms.push(term);
-      } else if (nameHasTerm) {
-        // Tier 2: Feature name contains keyword (even if instruction doesn't directly)
-        const score = group.baseScore * 0.6;
-        if (score > bestScore || (score === bestScore && 2 > bestTier)) {
-          bestScore = score;
-          bestTier = 2;
-        }
-        matchedTerms.push(term);
-      } else if (instrHasTerm && group.featureTypes.includes(featureType)) {
-        // Tier 3: Type-only match — weak signal
-        const score = group.baseScore * 0.3;
-        if (score > bestScore || (score === bestScore && 3 > bestTier)) {
-          bestScore = score;
-          bestTier = 3;
-        }
-        matchedTerms.push(term);
+  // 2. Required actions: CRUD verbs found in instructions
+  const requiredActions: string[] = [];
+  for (const [action, terms] of Object.entries(ACTION_TERMS)) {
+    if (terms.some(t => instrLower.includes(t))) {
+      requiredActions.push(action);
+    }
+  }
+
+  // 3. Primary module candidates: quoted names, verb objects, "模块X" patterns.
+  const primaryModules: string[] = [];
+  const CJK = '[\u4e00-\u9fa5\\w]';
+  const candidatePatterns: Array<{ re: RegExp; group: number }> = [
+    { re: /模块[\s“\"‘']*([一-龥\w]{2,20})/g, group: 1 },
+    { re: /对[\s“\"‘]*([一-龥\w]{2,20})(?:进行)?/g, group: 1 },
+    { re: /(?:测试|验证|检查|进入|访问)([一-龥\w]{2,10})/g, group: 1 },
+    { re: /[“\"‘]([^”\"’]{2,20})[”\"’]/g, group: 1 },
+  ];
+  for (const { re, group } of candidatePatterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(instructions)) !== null) {
+      let candidate = (m[group] ?? '').trim();
+      // Strip structural prefixes/suffixes
+      candidate = candidate
+        .replace(/^(?:\u5bf9|\u6a21\u5757|\u6d4b\u8bd5|\u9a8c\u8bc1|\u8fdb\u5165|\u8bbf\u95ee|\u7684)/, '')
+        .replace(/(?:\u6a21\u5757|\u529f\u80fd|\u7cfb\u7edf|\u9875\u9762)$/, '')
+        .trim();
+      if (candidate.length >= 2 && !NON_MODULE_WORDS.has(candidate)) {
+        primaryModules.push(candidate);
       }
     }
   }
 
-  if (bestScore === 0) return undefined;
-
-  // Clamp to [0, 1]
-  const score = Math.min(1, Math.max(0, bestScore));
-
-  const tierLabel = bestTier === 1 ? 'direct' : bestTier === 2 ? 'name' : 'type';
-
   return {
-    score,
-    source: 'user',
-    matchedTerms: [...new Set(matchedTerms)],
-    reason: `[${tierLabel}] Matched instructions: "${instructions.slice(0, 60)}${instructions.length > 60 ? '...' : ''}"`,
+    primaryModules: [...new Set(primaryModules)],
+    primaryFeatures: [],
+    prerequisites,
+    requiredActions,
+    depth: 'normal',
   };
 }
 
+/** Resolver result for module/surface/feature intent binding. */
+export interface IntentResolution {
+  role: 'primary' | 'prerequisite' | 'supporting' | 'incidental' | 'irrelevant';
+  matchedBy: 'module' | 'surface' | 'feature' | 'normalized' | 'prerequisite' | 'type' | 'none';
+  confidence: number;
+  pending: boolean;
+}
+
+function normalizeIntentEntity(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s_.\-/:：]+/g, '')
+    .replace(/["'“”‘’「」『』()（）]/g, '')
+    .trim();
+}
+
+function entityMatches(candidate: string, target: string): boolean {
+  const c = normalizeIntentEntity(candidate);
+  const t = normalizeIntentEntity(target);
+  if (!c || !t || c.length < 2 || t.length < 2) return false;
+  return c === t || c.includes(t) || t.includes(c);
+}
+
 /**
- * Calculate intent relevance for ALL features in a coverage model.
- * Called after feature discovery, before target selection.
- *
- * Two-pass approach:
- *   Pass 1: Keyword-based matching for each feature
- *   Pass 2: Structural heuristics (e.g., "only textbox on page = search box")
+ * Semantic fallback for business-module labels. A module like "项目集"
+ * and a control like "项目名称" share the meaningful stem "项目".
+ * This is deliberately conservative (two or more consecutive CJK chars)
+ * and is only used after exact module/surface matching fails.
  */
-export function calculateAllIntentRelevance(
+function entitySemanticMatches(candidate: string, target: string): boolean {
+  if (entityMatches(candidate, target)) return true;
+  const c = normalizeIntentEntity(candidate);
+  const t = normalizeIntentEntity(target);
+  if (!c || !t) return false;
+
+  // Business names often share a two-character domain stem:
+  // "项目集" ↔ "项目创建向导", "用户" ↔ "用户管理".
+  // Use a conservative CJK bigram intersection rather than a broad fuzzy match.
+  const cjkBigrams = (value: string): string[] => {
+    const runs = value.match(/[一-龥]+/g) ?? [];
+    const grams: string[] = [];
+    for (const run of runs) {
+      for (let i = 0; i < run.length - 1; i++) {
+        grams.push(run.slice(i, i + 2));
+      }
+    }
+    return grams;
+  };
+  const targetBigrams = new Set(cjkBigrams(t));
+  return cjkBigrams(c).some(bigram => targetBigrams.has(bigram));
+}
+
+function isAuthSurface(surface: CoverageSurface): boolean {
+  return /login|signin|auth|登录|密码/i.test(`${surface.url ?? ''} ${surface.title ?? ''}`);
+}
+
+/** Deterministic bilingual aliases for common business entities. */
+const INTENT_ENTITY_ALIASES: Record<string, string[]> = {
+  '项目集': ['项目集', '项目', 'project', 'program'],
+  '用户': ['用户', 'user', 'member'],
+  '产品': ['产品', 'product'],
+  '测试': ['测试', 'test', 'qa'],
+};
+
+function entityAliasMatches(candidate: string, target: string): boolean {
+  if (entitySemanticMatches(candidate, target)) return true;
+  const c = normalizeIntentEntity(candidate);
+  const t = normalizeIntentEntity(target);
+  for (const [canonical, aliases] of Object.entries(INTENT_ENTITY_ALIASES)) {
+    const normalizedAliases = aliases.map(normalizeIntentEntity);
+    const candidateInGroup = normalizedAliases.some(a => c.includes(a) || a.includes(c));
+    const targetInGroup = normalizedAliases.some(a => t.includes(a) || a.includes(t));
+    if (candidateInGroup && targetInGroup) return true;
+    // The user target itself can be the canonical key while the page only
+    // exposes an English URL/title alias.
+    if (normalizeIntentEntity(canonical) === t && candidateInGroup) return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve a primary module against the current Coverage Model.
+ * Module technical keys are fallback identity only; semantic names and
+ * surface titles are preferred. No match is a PENDING intent, never irrelevant.
+ */
+export function resolveIntentModule(
+  model: CoverageModel,
+  moduleName: string
+): { module?: CoverageModule; matchedBy: 'module' | 'surface' | 'normalized' | 'none'; confidence: number; pending: boolean } {
+  const normalized = normalizeIntentEntity(moduleName);
+
+  // 1. Semantic module name exact/normalized match
+  for (const module of model.modules) {
+    if (entityMatches(module.name, moduleName)) {
+      return { module, matchedBy: normalizeIntentEntity(module.name) === normalized ? 'module' : 'normalized', confidence: 1.0, pending: false };
+    }
+  }
+
+  // 2. Surface semantic title/labels match
+  for (const module of model.modules) {
+    for (const surface of module.surfaces) {
+      const labels = [surface.title ?? '', surface.url ?? '', ...(surface.semanticLabels ?? [])];
+      if (labels.some(label => entityAliasMatches(label, moduleName))) {
+        return { module, matchedBy: 'surface', confidence: 0.9, pending: false };
+      }
+    }
+  }
+
+  // 3. Technical key fallback (never rename the key)
+  for (const module of model.modules) {
+    if (entityMatches(module.key, moduleName)) {
+      return { module, matchedBy: 'normalized', confidence: 0.7, pending: false };
+    }
+  }
+
+  // 4. No current match — preserve as pending, not irrelevant
+  return { matchedBy: 'none', confidence: 0, pending: true };
+}
+
+/** Resolve a primary module against one surface's features. */
+export function resolveIntentSurface(
+  moduleName: string,
+  surface: CoverageSurface
+): IntentResolution {
+  const labels = [surface.title ?? '', ...(surface.semanticLabels ?? [])];
+  if (labels.some(label => entityAliasMatches(label, moduleName))) {
+    return { role: 'primary', matchedBy: 'surface', confidence: 0.95, pending: false };
+  }
+
+  // Feature-level exact/normalized semantic match
+  if (surface.features.some(feature => entitySemanticMatches(feature.name, moduleName))) {
+    return { role: 'primary', matchedBy: 'feature', confidence: 0.85, pending: false };
+  }
+
+  // The module may not be visible on this surface yet — preserve pending intent.
+  return { role: 'incidental', matchedBy: 'none', confidence: 0, pending: true };
+}
+
+/** Resolve a primary module against a feature. */
+export function resolveIntentFeature(
+  moduleName: string,
+  feature: CoverageFeature
+): IntentResolution {
+  if (entityMatches(feature.name, moduleName)) {
+    return { role: 'primary', matchedBy: 'feature', confidence: 0.85, pending: false };
+  }
+  return { role: 'incidental', matchedBy: 'none', confidence: 0, pending: true };
+}
+
+export function assignIntentRoles(
   model: CoverageModel,
   instructions: string | undefined
-): void {
-  if (!instructions) return;
-  const instrLower = instructions.toLowerCase();
+): TestIntent | undefined {
+  const intent = extractTestIntent(instructions);
 
-  // Collect all features across all surfaces for structural analysis
   const allFeatures: CoverageFeature[] = [];
   for (const module of model.modules) {
     for (const surface of module.surfaces) {
@@ -413,39 +574,164 @@ export function calculateAllIntentRelevance(
     }
   }
 
-  // Pass 1: Keyword-based matching
-  for (const feature of allFeatures) {
-    feature.intentRelevance = calculateIntentRelevance(
-      instructions,
-      feature.name,
-      feature.type
-    );
-  }
-
-  // Pass 2: Structural heuristics
-  // If the page has exactly one textbox and the instructions suggest search/input,
-  // that textbox is very likely the search box — regardless of its label.
-  const textboxes = allFeatures.filter(f => f.type === 'text-input');
-  const searchKeywords = ['search', '搜索', 'query', '查询', 'find', '查找', 'input', '输入', 'keyword', '关键词'];
-  const instrMentionsSearch = searchKeywords.some(k => instrLower.includes(k));
-
-  if (textboxes.length === 1 && instrMentionsSearch) {
-    const tb = textboxes[0]!;
-    const currentScore = tb.intentRelevance?.score ?? 0;
-    // Boost to at least 0.8 — a single textbox on a search-mentioning page is very likely the search box
-    if (currentScore < 0.8) {
-      tb.intentRelevance = {
-        score: 0.8,
+  if (!intent) {
+    // No instructions → no task context. Everything is incidental;
+    // scope falls back to intrinsic priority only.
+    for (const feature of allFeatures) {
+      feature.intentRelevance = {
+        role: 'incidental',
+        score: ROLE_SCORE.incidental,
+        confidence: 1.0,
         source: 'user',
-        matchedTerms: [...(tb.intentRelevance?.matchedTerms ?? []), '[structural:single-textbox]'],
-        reason: `Only textbox on page + instructions mention search`,
+        reason: 'No instructions provided \u2014 defaulting to incidental',
       };
     }
+    return undefined;
   }
+
+  const moduleNamesLower = intent.primaryModules.map(m => m.toLowerCase());
+  const prerequisiteTerms = PREREQUISITE_PATTERNS.flatMap(p => p.terms);
+
+  // Resolve the pending primary modules against the CURRENT model.
+  // A miss is intentionally preserved as pending; it is not downgraded to
+  // irrelevant. When a later surface appears, assignIntentRoles runs again.
+  for (const module of model.modules) {
+    let moduleMatched = false;
+    for (const moduleName of intent.primaryModules) {
+      const resolution = resolveIntentModule(model, moduleName);
+      if (resolution.module?.key !== module.key) continue;
+
+      module.intent = {
+        role: 'primary',
+        matchedBy: resolution.matchedBy,
+        confidence: resolution.confidence,
+      };
+      // Set semantic name only when it came from intent resolution; keep
+      // technical key stable and do not overwrite unrelated business names.
+      if (resolution.matchedBy === 'surface' || resolution.matchedBy === 'module') {
+        module.name = module.name || moduleName;
+      }
+      moduleMatched = true;
+      break;
+    }
+
+    // Reconcile each surface independently; a module can contain both
+    // primary and unrelated surfaces.
+    for (const surface of module.surfaces) {
+      const surfaceMatch = intent.primaryModules
+        .map(name => ({ name, resolution: resolveIntentSurface(name, surface) }))
+        .find(item => !item.resolution.pending);
+      if (surfaceMatch) {
+        surface.intent = {
+          role: 'primary',
+          matchedBy: surfaceMatch.resolution.matchedBy,
+          confidence: surfaceMatch.resolution.confidence,
+        };
+      } else if (moduleMatched) {
+        surface.intent = { role: 'supporting', matchedBy: 'module', confidence: 0.65 };
+      }
+    }
+  }
+
+  for (const module of model.modules) {
+    for (const surface of module.surfaces) {
+      const surfaceIsPrimary = surface.intent?.role === 'primary';
+      for (const feature of surface.features) {
+        const nameLower = feature.name.toLowerCase();
+        let role: IntentRole = 'irrelevant';
+        let confidence = 0.6;
+        let reason = '';
+        let matched = false;
+
+        // 1. Primary: current surface/module resolved to a requested module.
+        // This is the lifecycle fix: once the target surface appears, ALL
+        // business features on it can be primary without naming each control.
+        if (
+          surfaceIsPrimary &&
+          !prerequisiteTerms.some(t => nameLower.includes(t)) &&
+          !/\u5e2e\u52a9|\u5173\u4e8e|\u9690\u79c1|\u6761\u6b3e|help|about|privacy|terms|copyright/i.test(feature.name) &&
+          feature.type !== 'navigation' &&
+          feature.type !== 'tab' &&
+          feature.type !== 'link'
+        ) {
+          role = 'primary';
+          confidence = surface.intent?.confidence ?? 0.8;
+          reason = `Belongs to primary surface "${surface.title ?? surface.key}"`;
+          matched = true;
+        }
+
+        // 2. Feature-level primary match, even if surface title is generic
+        if (!matched) {
+          for (const modName of intent.primaryModules) {
+            const resolution = resolveIntentFeature(modName, feature);
+            if (!resolution.pending) {
+              role = 'primary';
+              confidence = resolution.confidence;
+              reason = `Feature matches requested module "${modName}"`;
+              matched = true;
+              break;
+            }
+          }
+        }
+
+        // 3. Prerequisite: login etc.
+        if (!matched && prerequisiteTerms.some(t => nameLower.includes(t))) {
+          role = 'prerequisite';
+          confidence = 0.9;
+          reason = 'Prerequisite for reaching the test target (login flow)';
+          matched = true;
+        }
+
+        // 4-6. Default classification by name/type
+        if (!matched) {
+          if (/\u5e2e\u52a9|\u5173\u4e8e|\u9690\u79c1|\u6761\u6b3e|help|about|privacy|terms|copyright/i.test(feature.name)) {
+            role = 'irrelevant';
+            confidence = 0.8;
+            reason = 'Decorative/legal/help element';
+          } else if (feature.type === 'navigation' || feature.type === 'tab' || feature.type === 'link') {
+            role = 'incidental';
+            confidence = 0.7;
+            reason = 'Navigation element \u2014 outside requested test scope';
+          } else if (feature.type !== 'unknown') {
+            role = 'supporting';
+            confidence = 0.6;
+            reason = 'Functional element \u2014 available if the flow needs it';
+          } else {
+            role = 'irrelevant';
+            confidence = 0.5;
+            reason = 'Unknown element type';
+          }
+        }
+
+        feature.intentRelevance = {
+          role,
+          score: ROLE_SCORE[role],
+          confidence,
+          source: 'user',
+          matchedTerms: matched ? [feature.name] : undefined,
+          reason,
+        };
+      }
+    }
+  }
+
+  return intent;
+}
+
+/** Role score lookup (for sorting/logging; role is the semantic) */
+export function getRoleScore(role: IntentRole): number {
+  return ROLE_SCORE[role];
+}
+
+/** Role ranking lookup (used by layered target selection) */
+export function getRoleOrder(role: IntentRole): number {
+  return ROLE_ORDER[role];
 }
 
 /**
- * Get effective priority from module → surface → feature (max wins).
+ * Get effective priority from module \u2192 surface \u2192 feature (max wins).
+ * Priority answers "how important is this feature in general" \u2014
+ * it never explains what the user wants to test (that is Intent's job).
  */
 export function effectivePriority(
   module: CoverageModule,
@@ -456,6 +742,7 @@ export function effectivePriority(
   const maxOrder = Math.max(...levels.map(l => PRIORITY_ORDER[l]));
   return (Object.entries(PRIORITY_ORDER).find(([_, v]) => v === maxOrder)?.[0] as PriorityLevel) ?? 'normal';
 }
+
 
 // ─── Coverage Model Operations ───────────────────────────────────────────────
 
@@ -621,6 +908,40 @@ export function markScenarioPlanned(
   }
 }
 
+/**
+ * Mark a scenario as skipped with a reason — honest coverage.
+ *
+ * A skipped scenario is NOT tested (coverage ≠ outcome), but it is also
+ * no longer a gap — the scheduling layer gave up on it for a recorded
+ * reason (e.g. target stagnation). It stays visible in reports as:
+ *   status: skipped, outcome: skipped, evidence.reason: why
+ */
+export function markScenarioSkipped(
+  feature: CoverageFeature,
+  scenarioType: ScenarioType,
+  reason: string
+): void {
+  const scenario = feature.scenarios[scenarioType];
+  if (!scenario) return;
+
+  // Only skip scenarios that haven't been tested
+  if (scenario.status === 'tested' || scenario.status === 'not_applicable') return;
+
+  scenario.status = 'skipped';
+  scenario.outcome = 'skipped';
+  scenario.testedAt = Date.now();
+  if (!scenario.evidence) {
+    scenario.evidence = [];
+  }
+  scenario.evidence.push({
+    action: 'skipped',
+    result: 'skipped',
+    turn: 0,
+    timestamp: Date.now(),
+    reason,
+  });
+}
+
 // ─── Coverage Calculation ────────────────────────────────────────────────────
 
 /**
@@ -685,69 +1006,116 @@ export function updateSurfaceCoverageStatus(
   }
 }
 
-// ─── Coverage Gap Analysis ───────────────────────────────────────────────────
+// ─── Scope Filtering ─────────────────────────────────────────────────────────
 
 /**
- * Calculate a composite score for a coverage target.
- * Used to sort gaps by desirability — higher = should be tested first.
+ * Check whether a feature is within the policy's required scope.
  *
- * Components:
- *   priorityScore:       0–4  from effectivePriority (critical=4, high=3, normal=2, low=1)
- *   intentRelevanceScore: 0–4  from feature.intentRelevance.score * 4
+ * Scope semantics:
+ *   all              → every feature is in scope
+ *   intent_relevant  → intent score > 0.5 OR effective priority is critical
+ *   critical         → effective priority is critical OR high
+ *   discovered_core  → intent score > 0.5 OR critical OR high
  *
- * This ensures user intent has comparable weight to business priority.
+ * Features outside scope are excluded from required coverage (gaps,
+ * isFeatureCovered, module/surface coverage) — they are still tracked
+ * and can be tested opportunistically, but the exit criteria don't
+ * demand them.
  */
-function scoreTarget(
-  target: CoverageTarget,
-  model: CoverageModel
-): number {
-  const priorityScore = PRIORITY_ORDER[target.priority.level] ?? 2;
+/**
+ * Check whether a feature is within the policy's required scope.
+ *
+ * Scope is LAYERED on intent role + intrinsic priority — it does NOT
+ * try to understand user intent itself (that is the Intent Model's job).
+ *
+ *   intent         → primary | prerequisite only (Smoke: exactly what the user asked)
+ *   core           → primary | prerequisite | critical intrinsic (Confirmation)
+ *   comprehensive  → primary | prerequisite | supporting (all business features;
+ *                    excludes incidental/irrelevant) (Acceptance)
+ *   all            → everything (Full)
+ */
+export function isFeatureInScope(
+  module: CoverageModule,
+  surface: CoverageSurface,
+  feature: CoverageFeature,
+  policy: CoveragePolicy
+): boolean {
+  const role = feature.intentRelevance?.role;
 
-  // Find the feature to get intent relevance
-  let intentScore = 0;
-  for (const module of model.modules) {
-    const surface = module.surfaces.find(s => s.key === target.surfaceKey);
-    if (!surface) continue;
-    const feature = surface.features.find(f => f.key === target.featureKey);
-    if (feature?.intentRelevance) {
-      intentScore = feature.intentRelevance.score * 4; // Scale to 0–4 range
+  switch (policy.scope) {
+    case 'intent':
+      return role === 'primary' || role === 'prerequisite';
+
+    case 'core': {
+      if (role === 'primary' || role === 'prerequisite') return true;
+      // Critical intrinsic features are always core business capability
+      return effectivePriority(module, surface, feature) === 'critical';
     }
-    break;
-  }
 
-  return priorityScore + intentScore;
+    case 'comprehensive':
+      // All business features — excludes incidental (navigation) and
+      // irrelevant (help/legal) elements
+      return role === 'primary' || role === 'prerequisite' || role === 'supporting';
+
+    case 'all':
+    default:
+      return true;
+  }
+}
+
+// ─── Coverage Gap Analysis ────────────────────────────────────────
+
+/**
+ * Find the feature for a target (helper).
+ */
+function findFeature(model: CoverageModel, target: CoverageTarget): CoverageFeature | undefined {
+  for (const m of model.modules) {
+    const surface = m.surfaces.find(s => s.key === target.surfaceKey);
+    if (!surface) continue;
+    return surface.features.find(f => f.key === target.featureKey);
+  }
+  return undefined;
 }
 
 /**
- * Get all uncovered or partially covered targets.
+ * Get all uncovered or partially covered targets WITHIN the policy scope.
  *
- * When `instructions` is provided, targets are sorted by a composite score:
- *   score = priorityScore + intentRelevanceScore
+ * Ordering is LAYERED (not a single additive score):
+ *   1. Intent role (primary > prerequisite > supporting > incidental > irrelevant)
+ *   2. Intrinsic priority (critical > high > normal > low)
+ *   3. Scenario depth weight (normal > validation > boundary > error > lifecycle)
  *
- * This ensures features relevant to the user's intent are tested first,
- * while still respecting business priority.
+ * Layering guarantees a primary+uncovered target ALWAYS outranks an
+ * incidental one — no numeric coincidence can invert the order.
  */
 export function getCoverageGaps(
   model: CoverageModel,
   policy: CoveragePolicy,
-  instructions?: string
+  instructions?: string,
+  currentSurfaceOnly = false
 ): CoverageTarget[] {
   const gaps: CoverageTarget[] = [];
 
+  const SCENARIO_ORDER: Record<ScenarioType, number> = {
+    normal: 5, validation: 4, boundary: 3, error: 2, lifecycle: 1,
+  };
+
   for (const module of model.modules) {
     for (const surface of module.surfaces) {
+      // Target selection is local to the currently observed surface. Keep
+      // prior surface coverage in the model, but never let stale targets
+      // compete after a major navigation change.
+      if (currentSurfaceOnly && model.currentSurfaceKey && surface.key !== model.currentSurfaceKey) continue;
+
       for (const feature of surface.features) {
+        if (!isFeatureInScope(module, surface, feature, policy)) continue;
+
         for (const [scenarioType, coverage] of Object.entries(feature.scenarios) as [ScenarioType, ScenarioCoverage][]) {
-          // Skip if not applicable
           if (coverage.status === 'not_applicable') continue;
-
-          // Skip if already tested
           if (coverage.status === 'tested') continue;
+          if (coverage.status === 'skipped') continue;
 
-          // Check if policy requires this scenario
           const isRequired = policy.scenarioDepth[scenarioType] === 'required';
-
-          // Critical features always required regardless of policy
           const isCritical = feature.priority.level === 'critical';
           const forceRequired = isCritical && policy.risk.criticalFeaturesAlwaysRequired;
 
@@ -767,8 +1135,20 @@ export function getCoverageGaps(
     }
   }
 
-  // Sort by composite score (priority + intent relevance)
-  gaps.sort((a, b) => scoreTarget(b, model) - scoreTarget(a, model));
+  // Layered sort: role first, then priority, then scenario depth.
+  gaps.sort((a, b) => {
+    const fa = findFeature(model, a);
+    const fb = findFeature(model, b);
+    const roleA = fa?.intentRelevance ? getRoleOrder(fa.intentRelevance.role) : 0;
+    const roleB = fb?.intentRelevance ? getRoleOrder(fb.intentRelevance.role) : 0;
+    if (roleA !== roleB) return roleB - roleA;
+
+    const prioA = PRIORITY_ORDER[a.priority.level] ?? 2;
+    const prioB = PRIORITY_ORDER[b.priority.level] ?? 2;
+    if (prioA !== prioB) return prioB - prioA;
+
+    return (SCENARIO_ORDER[b.scenarioType] ?? 0) - (SCENARIO_ORDER[a.scenarioType] ?? 0);
+  });
 
   return gaps;
 }
@@ -776,13 +1156,13 @@ export function getCoverageGaps(
 /**
  * Select the next coverage target to test.
  *
- * Three-phase selection:
- *   Phase 1: Features with intent relevance > 0.5 (user specifically asked for these)
- *   Phase 2: Critical / high priority features
- *   Phase 3: Everything else, sorted by composite score
+ * LAYERED selection (replaces additive scoring):
+ *   Layer 1: primary role targets (the user explicitly asked for these)
+ *   Layer 2: prerequisite targets (login etc. — required to reach primary)
+ *   Layer 3: critical/high intrinsic priority
+ *   Layer 4: everything else in scope (already gap-sorted)
  *
- * Skipped targets (stagnated — selected multiple times but never matched by an action)
- * are excluded from selection to prevent infinite loops.
+ * Skipped targets (stagnated) are excluded to prevent infinite loops.
  */
 export function selectNextTarget(
   model: CoverageModel,
@@ -790,39 +1170,40 @@ export function selectNextTarget(
   instructions?: string,
   skippedTargets?: string[]
 ): CoverageTarget | null {
-  const gaps = getCoverageGaps(model, policy, instructions);
+  const gaps = getCoverageGaps(model, policy, instructions, true);
   if (gaps.length === 0) return null;
 
   const skipped = new Set(skippedTargets ?? []);
 
-  // Helper: find first gap not in skipped set, optionally filtered by predicate
-  function findGap(predicate?: (g: CoverageTarget, model: CoverageModel) => boolean): CoverageTarget | null {
+  function findGap(predicate?: (g: CoverageTarget) => boolean): CoverageTarget | null {
     for (const g of gaps) {
       if (skipped.has(g.featureKey)) continue;
-      if (predicate && !predicate(g, model)) continue;
+      if (predicate && !predicate(g)) continue;
       return g;
     }
     return null;
   }
 
-  // Phase 1: High intent relevance (> 0.5)
-  const phase1 = findGap((g) => {
-    for (const m of model.modules) {
-      for (const s of m.surfaces) {
-        if (s.key !== g.surfaceKey) continue;
-        const f = s.features.find(ff => ff.key === g.featureKey);
-        if (f?.intentRelevance && f.intentRelevance.score > 0.5) return true;
-      }
-    }
-    return false;
+  function featureFor(g: CoverageTarget): CoverageFeature | undefined {
+    return findFeature(model, g);
+  }
+
+  // Layer 1: primary
+  const primary = findGap(g => featureFor(g)?.intentRelevance?.role === 'primary');
+  if (primary) return primary;
+
+  // Layer 2: prerequisite
+  const prereq = findGap(g => featureFor(g)?.intentRelevance?.role === 'prerequisite');
+  if (prereq) return prereq;
+
+  // Layer 3: critical/high intrinsic
+  const highPriority = findGap(g => {
+    const lvl = g.priority.level;
+    return lvl === 'critical' || lvl === 'high';
   });
-  if (phase1) return phase1;
+  if (highPriority) return highPriority;
 
-  // Phase 2: Critical or high priority
-  const phase2 = findGap(g => g.priority.level === 'critical' || g.priority.level === 'high');
-  if (phase2) return phase2;
-
-  // Phase 3: Best composite score (already sorted)
+  // Layer 4: best remaining (gaps are already sorted by the layered sort)
   return findGap() ?? null;
 }
 
@@ -1018,7 +1399,7 @@ export interface FinishDecision {
  *
  * Exit criteria (in order):
  *   1. Critical targets covered
- *   2. Required coverage satisfied
+ *   2. Required coverage satisfied (scope-filtered: only in-scope features count)
  *   3. Discovery stable
  *   4. No blocking issues
  *   5. Budget exhausted (hard limit)
@@ -1033,12 +1414,15 @@ export function shouldFinishTesting(
   const criticalCovered = criticalModules.length === 0 ||
     criticalModules.every(m => isModuleCovered(m, policy));
 
-  // 2. Required coverage (major modules)
+  // 2. Required coverage (major modules) — scope-filtered
+  //    Out-of-scope features (e.g. unrelated links under 'intent_relevant'
+  //    scope) must NOT block exit. Count a surface covered if all its
+  //    IN-SCOPE features are covered.
   const majorModules = model.modules.filter(m =>
     m.priority.level === 'critical' || m.priority.level === 'high'
   );
   const requiredCovered = majorModules.length === 0 ||
-    majorModules.every(m => isModuleCovered(m, policy));
+    majorModules.every(m => moduleInScopeFeaturesCovered(m, policy));
 
   // 3. Discovery stable
   const discoveryStable = model.discovery.stableTurns >= policy.discovery.stableTurnsBeforeFinish;
@@ -1080,6 +1464,33 @@ export function shouldFinishTesting(
       coverageRate,
     },
   };
+}
+
+/**
+ * Check whether all IN-SCOPE features of a module are covered.
+ * Out-of-scope features are ignored for exit-criteria purposes.
+ * A module with zero in-scope features counts as covered (vacuous truth).
+ */
+function moduleInScopeFeaturesCovered(
+  module: CoverageModule,
+  policy: CoveragePolicy
+): boolean {
+  for (const surface of module.surfaces) {
+    for (const feature of surface.features) {
+      if (!isFeatureInScope(module, surface, feature, policy)) continue;
+      // Skipped scenarios don't block exit (honest coverage: recorded, not demanded)
+      const requiredScenarios = (Object.entries(feature.scenarios) as [ScenarioType, ScenarioCoverage][])
+        .filter(([type, cov]) =>
+          cov.status !== 'not_applicable' &&
+          cov.status !== 'skipped' &&
+          policy.scenarioDepth[type] === 'required'
+        );
+      if (!requiredScenarios.every(([_, cov]) => cov.status === 'tested')) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 // ─── Coverage Summary ────────────────────────────────────────────────────────
@@ -1193,18 +1604,18 @@ export function formatCoverageSummary(
   if (gaps.length > 0) {
     lines.push('TODO');
     for (const gap of gaps.slice(0, 5)) {
-      // Find feature to get intent relevance
-      let relevanceStr = '';
+      // Show intent role for the gap (primary/prerequisite/...)
+      let roleStr = '';
       for (const m of model.modules) {
         const s = m.surfaces.find(ss => ss.key === gap.surfaceKey);
         if (!s) continue;
         const f = s.features.find(ff => ff.key === gap.featureKey);
-        if (f?.intentRelevance && f.intentRelevance.score > 0) {
-          relevanceStr = ` intent=${f.intentRelevance.score.toFixed(1)}`;
+        if (f?.intentRelevance) {
+          roleStr = ` role=${f.intentRelevance.role}`;
         }
         break;
       }
-      lines.push(`- ${gap.featureKey}/${gap.scenarioType} [${gap.priority.level}]${relevanceStr}`);
+      lines.push(`- ${gap.featureKey}/${gap.scenarioType} [${gap.priority.level}]${roleStr}`);
     }
   }
 
@@ -1216,6 +1627,7 @@ export function formatCoverageSummary(
 export const COVERAGE_POLICIES: Record<TestType, CoveragePolicy> = {
   smoke: {
     testType: 'smoke',
+    scope: 'intent',
     systemCoverage: {
       criticalModules: 'all',
       majorModules: 'minimal',
@@ -1242,6 +1654,7 @@ export const COVERAGE_POLICIES: Record<TestType, CoveragePolicy> = {
   },
   confirmation: {
     testType: 'confirmation',
+    scope: 'core',
     systemCoverage: {
       criticalModules: 'all',
       majorModules: 'all',
@@ -1268,6 +1681,7 @@ export const COVERAGE_POLICIES: Record<TestType, CoveragePolicy> = {
   },
   acceptance: {
     testType: 'acceptance',
+    scope: 'comprehensive',
     systemCoverage: {
       criticalModules: 'all',
       majorModules: 'all',
@@ -1294,6 +1708,7 @@ export const COVERAGE_POLICIES: Record<TestType, CoveragePolicy> = {
   },
   full: {
     testType: 'full',
+    scope: 'all',
     systemCoverage: {
       criticalModules: 'all',
       majorModules: 'all',

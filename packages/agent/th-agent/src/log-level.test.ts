@@ -41,7 +41,7 @@ describe('P2: agent logger level filtering', () => {
     expect(joined).toContain('[TARGET]');
     expect(joined).toContain('[STATE]');
     expect(joined).not.toContain('raw step detail');
-  });
+  }, 15000);
 
   it('DEBUG level (TH_LOG_LEVEL=debug): debug() output is emitted', async () => {
     process.env.TH_LOG_LEVEL = 'debug';

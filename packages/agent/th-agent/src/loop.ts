@@ -78,12 +78,13 @@ import {
   registerFeature,
   updateScenario,
   markScenarioPlanned,
+  markScenarioSkipped,
   selectNextTarget,
   shouldFinishTesting,
   formatCoverageSummary,
   updateSurfaceCoverageStatus,
   getCoverageGaps,
-  calculateAllIntentRelevance,
+  assignIntentRoles,
   resolveActionFeature,
   COVERAGE_POLICIES,
   type CoverageModel,
@@ -531,6 +532,7 @@ export class AgentLoop {
       const coverageModel = context.workflow.coverageModel;
       const coveragePolicy = context.workflow.coveragePolicy;
 
+      const instructions = context.config.instructions as string | undefined;
       // 1. Update surface from latest snapshot
       const rawSnapshot = context.workflow.lastRawSnapshot;
       if (rawSnapshot) {
@@ -567,7 +569,22 @@ export class AgentLoop {
               );
               newSurface.signatureHash = currHash;
               discoverFeaturesFromSnapshot(rawSnapshot, newSurface);
+              // P0-B: reconcile the persistent TestIntent against the newly
+              // visible surface immediately. Do not reset CoverageModel;
+              // only rebind roles and invalidate the local target.
+              assignIntentRoles(coverageModel, instructions);
               coverageModel.currentSurfaceKey = currentSurfaceKey;
+              context.workflow.currentCoverageTarget = undefined;
+              context.workflow.targetStagnationCount = 0;
+              const reconciledSurface = coverageModel.modules
+                .flatMap(m => m.surfaces)
+                .find(s => s.key === currentSurfaceKey);
+              const reconciledRoles: Record<string, number> = {};
+              for (const f of reconciledSurface?.features ?? []) {
+                const role = f.intentRelevance?.role ?? 'none';
+                reconciledRoles[role] = (reconciledRoles[role] ?? 0) + 1;
+              }
+              logger.info(`[TARGET] reconciled intent after major surface: ${currentSurfaceKey} title="${newSurface.title ?? ''}" roles=${JSON.stringify(reconciledRoles)}`);
               logger.info(`[SURFACE] Registered new surface: ${currentSurfaceKey}, ${newSurface.features.length} features`);
             }
           }
@@ -576,8 +593,7 @@ export class AgentLoop {
         }
       }
 
-      // 2. Select next target (with user instructions for intent relevance)
-      const instructions = context.config.instructions as string | undefined;
+      // 2. Select next target using the already extracted instruction context
       const target = selectNextTarget(coverageModel, coveragePolicy, instructions, context.workflow.skippedTargets);
       context.workflow.currentCoverageTarget = target ?? undefined;
 
@@ -587,7 +603,7 @@ export class AgentLoop {
       coverageLines.push(coverageSummary);
 
       // Log coverage state — summary detail at debug, gap count at info
-      const gaps = getCoverageGaps(coverageModel, coveragePolicy, instructions);
+      const gaps = getCoverageGaps(coverageModel, coveragePolicy, instructions, true);
       logger.debug(`[COVERAGE] summary: ${coverageSummary.replace(/\n/g, ' | ')}`);
       logger.info(`[COVERAGE] gaps: ${gaps.length} remaining`);
 
@@ -595,8 +611,8 @@ export class AgentLoop {
         coverageLines.push('');
         coverageLines.push(`CURRENT TARGET: Test ${target.featureKey} (${target.scenarioType}) [priority: ${target.priority.level}]`);
 
-        // Log target — find the feature name and intent relevance
-        let intentStr = '0.0';
+        // Log target — feature name + intent role (role is the semantic, not score)
+        let roleStr = 'none';
         let featureName = target.featureKey;
         for (const m of coverageModel.modules) {
           const s = m.surfaces.find(ss => ss.key === target.surfaceKey);
@@ -605,12 +621,12 @@ export class AgentLoop {
           if (f) {
             featureName = f.name;
             if (f.intentRelevance) {
-              intentStr = f.intentRelevance.score.toFixed(2);
+              roleStr = f.intentRelevance.role;
             }
           }
           break;
         }
-        logger.info(`[TARGET] ${target.featureKey} "${featureName}" scenario=${target.scenarioType} priority=${target.priority.level} intent=${intentStr}`);
+        logger.info(`[TARGET] ${target.featureKey} "${featureName}" scenario=${target.scenarioType} priority=${target.priority.level} role=${roleStr}`);
 
         // Generate a plan for this target to guide the LLM
         const plan = generateTestPlan(coverageModel, target, coveragePolicy);
@@ -797,7 +813,7 @@ export class AgentLoop {
         } else {
           // Coverage NOT complete — continue testing, prompt LLM to keep going
           const noToolInstructions = context.config.instructions as string | undefined;
-          const gaps = getCoverageGaps(context.workflow.coverageModel, context.workflow.coveragePolicy, noToolInstructions);
+          const gaps = getCoverageGaps(context.workflow.coverageModel, context.workflow.coveragePolicy, noToolInstructions, true);
           logger.info(`[EXIT] coverage incomplete: ${gaps.length} targets remaining — continuing`);
           const topGap = gaps[0];
           const guidance = topGap
@@ -826,6 +842,12 @@ export class AgentLoop {
 
     // Track whether the current coverage target was matched by any action this turn
     let targetMatchedThisTurn = false;
+
+    // P2: The snapshot version the LLM based its decisions on. Tool execution
+    // may itself produce new snapshots (auto-snapshot after actions), so any
+    // mismatch between decisionVersion and the version at ALIGN time proves
+    // the action was decided against a stale snapshot.
+    const decisionSnapshotVersion = context.workflow.snapshotVersion;
 
     for (const toolCall of response.toolCalls) {
       // Log tool call
@@ -1122,6 +1144,25 @@ export class AgentLoop {
       }
 
       // ── Phase 4: Update coverage from action ──
+      // ④ Boundary accounting: if the coverage model isn't initialized yet
+      // (actions during NAVIGATE/LOGIN), buffer the action for replay once
+      // coverage is initialized — it might have been the click that actually
+      // reached the test target.
+      if (!context.workflow.coverageModel) {
+        const interactionTools = [
+          'browser_click', 'browser_type', 'browser_fill_form',
+          'browser_select_option', 'browser_check', 'browser_uncheck',
+          'browser_press_key',
+        ];
+        if (interactionTools.includes(toolCall.name)) {
+          context.workflow.pendingActions.push({
+            toolName: toolCall.name,
+            toolArgs: toolCall.arguments as Record<string, unknown>,
+            success: result.success,
+            turn: context.turnCount,
+          });
+        }
+      }
       if (context.workflow.coverageModel && context.workflow.currentCoverageTarget) {
         // Only interaction tools (not navigation) should trigger coverage update
         const interactionTools = [
@@ -1200,6 +1241,56 @@ export class AgentLoop {
               : 'no feature matched';
             logger.info(`[ACTION] ${toolCall.name} "${elementDesc}" unmatched (${matchInfo}) — target ${target.featureKey} unchanged`);
 
+            // ── P1 diagnostics: why did the action fail to resolve? ──
+            // Three verdicts:
+            //   ref_drift    — target.feature.ref exists, differs from action ref,
+            //                  action ref IS in the current snapshot → snapshot lifecycle
+            //   ref_unknown  — action ref is NOT in the current snapshot → LLM/Tool
+            //                  saw a different snapshot version than coverage registered
+            //   no_ref       — action carries no ref; resolution relied on name only
+            {
+              const targetSurface = context.workflow.coverageModel.modules
+                .flatMap(m => m.surfaces)
+                .find(s => s.key === target.surfaceKey);
+              const targetFeature = targetSurface?.features.find(f => f.key === target.featureKey);
+              const snapshotRefs = context.workflow.currentSnapshotRefs;
+              const actionRefInSnapshot = !targetRef || snapshotRefs.includes(targetRef);
+              const targetRefInSnapshot = !targetFeature?.ref || snapshotRefs.includes(targetFeature.ref);
+              const refConsistent = !targetFeature?.ref || !targetRef || targetFeature.ref === targetRef;
+
+              let verdict: string;
+              if (targetRef && targetFeature?.ref && !refConsistent && actionRefInSnapshot) {
+                verdict = 'ref_drift (action ref is current; feature ref is stale)';
+              } else if (targetRef && !actionRefInSnapshot) {
+                verdict = 'ref_unknown (action ref not in current snapshot)';
+              } else if (!targetRef) {
+                verdict = 'no_ref (action had no ref; name-matching only)';
+              } else {
+                verdict = 'resolver_miss (refs consistent; resolver returned nothing)';
+              }
+
+              logger.info(`[ALIGN] v${context.workflow.snapshotVersion} (decided@v${decisionSnapshotVersion}) target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
+
+              // Per-turn, only for unmatched: at debug, dump the few candidate
+              // features on the target surface that share the action's element type.
+              const toolTypeHint: Record<string, string[]> = {
+                browser_click: ['button', 'link', 'checkbox', 'radio', 'tab'],
+                browser_type: ['text-input', 'search'],
+                browser_fill_form: ['form', 'text-input'],
+                browser_select_option: ['dropdown'],
+                browser_check: ['checkbox'],
+                browser_uncheck: ['checkbox'],
+              };
+              const hintTypes = toolTypeHint[toolCall.name];
+              if (hintTypes && targetSurface) {
+                const candidates = targetSurface.features
+                  .filter(f => hintTypes.includes(f.type))
+                  .slice(0, 6)
+                  .map(f => `${f.key}("${f.name}",ref=${f.ref ?? '-'})`);
+                logger.debug(`[ALIGN] same-type candidates on surface: ${candidates.join(' | ') || 'none'}`);
+              }
+            }
+
             // Any successful interaction on same surface = some discovery progress
             if (result.success) {
               context.workflow.coverageModel.discovery.stableTurns++;
@@ -1220,9 +1311,26 @@ export class AgentLoop {
         context.workflow.targetStagnationCount++;
         if (context.workflow.targetStagnationCount >= 3) {
           const skippedKey = context.workflow.currentCoverageTarget.featureKey;
+          const skipReason = `stagnation: selected 3 turns without a matching action`;
           if (!context.workflow.skippedTargets.includes(skippedKey)) {
             context.workflow.skippedTargets.push(skippedKey);
-            logger.warn(`[TARGET] Skipping stagnated target: ${skippedKey} (selected 3x without match)`);
+            logger.warn(`[TARGET] Skipping stagnated target: ${skippedKey} (${skipReason})`);
+
+            // ② Honest coverage: record skipped outcome so it's reportable,
+            // not silently dropped from coverage.
+            const skippedTarget = context.workflow.currentCoverageTarget;
+            for (const mod of context.workflow.coverageModel!.modules) {
+              for (const surf of mod.surfaces) {
+                const feat = surf.features.find(f => f.key === skippedKey);
+                if (feat) {
+                  markScenarioSkipped(feat, skippedTarget.scenarioType, skipReason);
+                  sessionLog.append('system/note', {
+                    note: `[Coverage] ${feat.key}/${skippedTarget.scenarioType} skipped: ${skipReason}`,
+                  });
+                  break;
+                }
+              }
+            }
           }
           context.workflow.targetStagnationCount = 0;
         }
@@ -1280,6 +1388,7 @@ export class AgentLoop {
             if (snapResult.success && snapResult.data) {
               snapshotText = String((snapResult.data as any).text ?? '');
               context.workflow.lastRawSnapshot = snapshotText;
+              context.workflow.snapshotVersion++;
             }
           }
 
@@ -1310,25 +1419,73 @@ export class AgentLoop {
             discoverFeaturesFromSnapshot(snapshotText, surface);
             coverageModel.currentSurfaceKey = surfaceKey;
 
-            // Calculate intent relevance for all features based on user instructions
+            // Intent Model: extract structured intent and assign intent roles
+            // (primary / prerequisite / supporting / incidental / irrelevant)
+            // to every feature. Roles — not keyword scores — drive scope
+            // filtering and layered target selection.
+            const testType = (context.config.testType ?? 'smoke') as CoverageTestType;
             const instructions = context.config.instructions as string | undefined;
-            calculateAllIntentRelevance(coverageModel, instructions);
+            const intent = assignIntentRoles(coverageModel, instructions);
+            if (intent) {
+              context.workflow.testIntent = intent;
+              logger.info(`[TARGET] intent modules=${JSON.stringify(intent.primaryModules)} prerequisites=${JSON.stringify(intent.prerequisites)} actions=${JSON.stringify(intent.requiredActions)}`);
+            }
+
+            // Log role distribution
+            const roleCounts: Record<string, number> = {};
+            for (const f of surface.features) {
+              const r = f.intentRelevance?.role ?? 'none';
+              roleCounts[r] = (roleCounts[r] ?? 0) + 1;
+            }
+            const roleStr = Object.entries(roleCounts)
+              .map(([r, c]) => `${r}:${c}`)
+              .join(' ');
 
             logger.info(`[SURFACE] ${surfaceKey}: ${surface.features.length} features discovered`);
-            if (instructions) {
-              const relevantFeatures = surface.features
-                .filter(f => f.intentRelevance && f.intentRelevance.score > 0)
-                .sort((a, b) => (b.intentRelevance?.score ?? 0) - (a.intentRelevance?.score ?? 0));
-              const highCount = relevantFeatures.filter(f => (f.intentRelevance?.score ?? 0) > 0.5).length;
-              logger.info(`[TARGET] intent relevance: ${highCount}/${surface.features.length} features`);
-              for (const f of relevantFeatures.slice(0, 5)) {
-                logger.debug(`[TARGET]   ${f.name} (${f.type}): intent=${f.intentRelevance?.score.toFixed(2)}`);
-              }
+            logger.info(`[TARGET] intent roles: ${roleStr}`);
+            const primaryFeatures = surface.features.filter(f => f.intentRelevance?.role === 'primary');
+            for (const f of primaryFeatures.slice(0, 5)) {
+              logger.info(`[TARGET]   primary: ${f.name} (${f.type})`);
             }
-            logger.debug(`[COVERAGE] policy: ${testType}, depth: ${JSON.stringify(coveragePolicy.scenarioDepth)}`);
+            const prereqFeatures = surface.features.filter(f => f.intentRelevance?.role === 'prerequisite');
+            for (const f of prereqFeatures.slice(0, 3)) {
+              logger.info(`[TARGET]   prerequisite: ${f.name} (${f.type})`);
+            }
+            logger.debug(`[COVERAGE] policy: ${testType}, scope: ${coveragePolicy.scope}, depth: ${JSON.stringify(coveragePolicy.scenarioDepth)}`);
           }
 
           context.workflow.coverageInitialized = true;
+
+          // ④ Boundary accounting: replay pending actions (performed before
+          // coverage init, e.g. the click that reached the test target)
+          // through resolveActionFeature() now that features are registered.
+          const pending = [...context.workflow.pendingActions];
+          context.workflow.pendingActions = [];
+          for (const pa of pending) {
+            if (!pa.success) continue;
+            const paMatch = resolveActionFeature(pa.toolName, pa.toolArgs, coverageModel);
+            if (paMatch) {
+              // Replay: update the matched feature's normal scenario
+              for (const mod of coverageModel.modules) {
+                for (const surf of mod.surfaces) {
+                  const feat = surf.features.find(f => f.key === paMatch.feature.key);
+                  if (feat) {
+                    updateScenario(feat, 'normal', 'pass', {
+                      action: pa.toolName,
+                      result: 'pass',
+                      turn: pa.turn,
+                      timestamp: Date.now(),
+                    });
+                    updateSurfaceCoverageStatus(surf, coveragePolicy);
+                    logger.info(`[ACTION] boundary replay: ${pa.toolName} → ${feat.key} "${feat.name}" (turn ${pa.turn}, method=${paMatch.method})`);
+                    break;
+                  }
+                }
+              }
+            } else {
+              logger.debug(`[ACTION] boundary replay: ${pa.toolName} unmatched — dropped`);
+            }
+          }
 
           // Check if already complete (e.g., no features found)
           const finishDecision = shouldFinishTesting(coverageModel, coveragePolicy, {

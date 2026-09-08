@@ -13,8 +13,8 @@ export class SessionWebSocket {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    // Direct connection to backend ws server (ws library)
-    const wsUrl = 'ws://localhost:3000/ws';
+    // Use relative path - Vite proxy will forward to backend
+    const wsUrl = `ws://${window.location.host}/ws`;
     console.log('[WebSocket] Connecting to', wsUrl);
 
     // Reset reconnect attempts when manually connecting

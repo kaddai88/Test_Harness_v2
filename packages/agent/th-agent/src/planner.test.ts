@@ -247,9 +247,12 @@ describe("selectPlannerLevel", () => {
     expect(level).toBe('template');
   });
 
-  it("returns llm for high risk in full test", () => {
+  it("form with high risk in full test goes to template (not LLM) — Iteration 2 ⑤", () => {
+    // Iteration 2 ⑤ design: known types with real template plans NEVER fall
+    // through to the LLM placeholder. 'form' has formTemplate, so it always
+    // goes to 'template' regardless of risk score.
     const level = selectPlannerLevel(5, 'form', 'full');
-    expect(level).toBe('llm');
+    expect(level).toBe('template');
   });
 
   it("returns deterministic for link/tab/navigation regardless of risk", () => {
@@ -263,9 +266,18 @@ describe("selectPlannerLevel", () => {
     expect(level).toBe('template');
   });
 
-  it("returns llm for high risk form in acceptance test", () => {
+  it("acceptance-test form also stays at template (no LLM fallback) — Iteration 2 ⑤", () => {
+    // Iteration 2 ⑤: form is in the templateTypes list, always routed to template.
     const level = selectPlannerLevel(6, 'form', 'acceptance');
-    expect(level).toBe('llm');
+    expect(level).toBe('template');
+  });
+
+  it("only 'unknown' feature type reaches llm level", () => {
+    // Iteration 2 ⑤: every known type is covered by deterministic or template.
+    // Only genuinely unknown features go to LLM.
+    expect(selectPlannerLevel(1, 'unknown', 'smoke')).toBe('llm');
+    expect(selectPlannerLevel(10, 'form', 'full')).toBe('template');
+    expect(selectPlannerLevel(10, 'button', 'full')).toBe('deterministic');
   });
 
   it("thresholds are stricter for full test type", () => {
@@ -324,19 +336,21 @@ describe("generateTestPlan", () => {
     expect(plan!.steps.some(s => s.description.includes('Fill'))).toBe(true);
   });
 
-  it("selects llm planner for high-risk critical feature in full test", () => {
+  it("selects template (not llm) for high-risk critical form in full test — Iteration 2 ⑤", () => {
+    // Iteration 2 ⑤ design: form has formTemplate, so it ALWAYS goes to
+    // template level regardless of risk/criticality. Only 'unknown' reaches llm.
     const model = createCoverageModel();
     registerModule(model, 'mod1', 'Module 1', { level: 'critical', source: 'user' });
     const surface = registerSurface(model, 'mod1', 'surf1', 'http://example.com/critical');
-    
+
     // Add complex form fields
     for (let i = 0; i < 8; i++) {
       registerFeature(surface, `field${i}`, `Field ${i}`, 'text-input');
     }
     registerFeature(surface, 'upload1', 'Upload File', 'upload');
     registerFeature(surface, 'dropdown1', 'Select Type', 'dropdown');
-    
-    const feature = registerFeature(surface, 'critical-form', 'Critical Process', 'form', 
+
+    const feature = registerFeature(surface, 'critical-form', 'Critical Process', 'form',
       { level: 'critical', source: 'user' });
 
     const target: CoverageTarget = {
@@ -349,7 +363,8 @@ describe("generateTestPlan", () => {
     const plan = generateTestPlan(model, target, COVERAGE_POLICIES.full);
 
     expect(plan).not.toBeNull();
-    expect(plan!.plannerLevel).toBe('llm');
+    // Iteration 2 ⑤: form → template, not llm (even for critical high-risk)
+    expect(plan!.plannerLevel).toBe('template');
   });
 
   it("returns null for unknown target", () => {
@@ -789,5 +804,158 @@ describe("empty plan fallback", () => {
     expect(validateTestPlan(plan!)).toBe(true);
     // Should be LLM since template couldn't handle it
     expect(plan!.plannerLevel).toBe('llm');
+  });
+});
+
+// ─── Iteration 2 ③: text-input planner coverage ─────────────────────────────
+
+describe("text-input planner (Iteration 2 ③)", () => {
+  it("text-input with low risk gets a REAL deterministic plan (not LLM placeholder)", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'Module 1');
+    const surface = registerSurface(model, 'mod1', 'surf1', 'http://example.com/form');
+    registerFeature(surface, 'input1', 'Username', 'text-input');
+
+    const target = createTestTarget('surf1', 'input1', 'normal');
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.smoke);
+
+    expect(plan).not.toBeNull();
+    expect(plan!.plannerLevel).toBe('deterministic'); // NOT 'llm'
+    expect(plan!.steps.length).toBeGreaterThan(0);
+    // Should include a type action
+    expect(plan!.steps.some(s => s.tool === 'browser_type')).toBe(true);
+    expect(plan!.steps.some(s => s.description.includes('Username'))).toBe(true);
+  });
+
+  it("number-input also gets a deterministic plan", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'Module 1');
+    const surface = registerSurface(model, 'mod1', 'surf1', 'http://example.com/form');
+    registerFeature(surface, 'num1', 'Quantity', 'number-input');
+
+    const target = createTestTarget('surf1', 'num1', 'normal');
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.smoke);
+
+    expect(plan).not.toBeNull();
+    expect(plan!.plannerLevel).toBe('deterministic');
+  });
+
+  it("text-input validation scenario includes empty-submit step", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'Module 1');
+    const surface = registerSurface(model, 'mod1', 'surf1', 'http://example.com/form');
+    registerFeature(surface, 'input1', 'Username', 'text-input');
+
+    const target = createTestTarget('surf1', 'input1', 'validation');
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.confirmation);
+
+    expect(plan).not.toBeNull();
+    expect(plan!.steps.some(s => s.scenarioType === 'validation')).toBe(true);
+  });
+
+  it("high-risk text-input escalates to template but NEVER stays a bare LLM placeholder for normal scenario", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'Module 1');
+    const surface = registerSurface(model, 'mod1', 'surf1', 'http://example.com/complex');
+    const feature = registerFeature(surface, 'input1', 'Complex Field', 'text-input', { level: 'critical', source: 'user' });
+    // Make surface complex to raise risk score
+    for (let i = 0; i < 8; i++) {
+      registerFeature(surface, `dd${i}`, `Dropdown ${i}`, 'dropdown');
+    }
+    void feature;
+
+    const target = createTestTarget('surf1', 'input1', 'normal');
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.full);
+
+    expect(plan).not.toBeNull();
+    // Must be deterministic or template — never bare LLM for a plain text input
+    expect(['deterministic', 'template']).toContain(plan!.plannerLevel);
+  });
+
+  it("search-intent text-input uses the search template (type → submit → verify)", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'Module 1');
+    const surface = registerSurface(model, 'mod1', 'surf1', 'http://www.baidu.com');
+    const input = registerFeature(surface, 'input1', '热搜输入框', 'text-input');
+    // Mark as search-intent (as calculateAllIntentRelevance would)
+    input.intentRelevance = { score: 1.0, source: 'user', matchedTerms: ['搜索'] };
+    registerFeature(surface, 'btn1', '百度一下', 'button');
+
+    const target = createTestTarget('surf1', 'input1', 'normal');
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.smoke);
+
+    expect(plan).not.toBeNull();
+    expect(plan!.plannerLevel).toBe('template'); // search template, not bare deterministic
+    // Full flow: type + click submit + verify
+    expect(plan!.steps.some(s => s.tool === 'browser_type')).toBe(true);
+    expect(plan!.steps.some(s => s.tool === 'browser_click' && s.description.includes('百度一下'))).toBe(true);
+    expect(plan!.steps.some(s => s.description.toLowerCase().includes('verify'))).toBe(true);
+  });
+});
+
+// ─── Iteration 2 ⑤: dropdown and button get deterministic plans (llmPlanner only for 'unknown') ─
+
+describe("planner coverage: dropdown and button → deterministic (Iteration 2 ⑤)", () => {
+  it("dropdown gets a deterministic select-option plan", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'M');
+    const surface = registerSurface(model, 'mod1', 's1', 'http://example.com/form');
+    registerFeature(surface, 'dd1', 'Country', 'dropdown');
+    const target = { surfaceKey: 's1', featureKey: 'dd1', scenarioType: 'normal' as const, priority: { level: 'normal' as const, source: 'system' as const } };
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.smoke);
+    expect(plan).not.toBeNull();
+    expect(plan!.plannerLevel).toBe('deterministic');
+    expect(plan!.steps.some(s => s.tool === 'browser_select_option')).toBe(true);
+  });
+
+  it("generic button (non-CRUD) gets a deterministic click plan", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'M');
+    const surface = registerSurface(model, 'mod1', 's1', 'http://example.com/page');
+    // Name does NOT match CRUD keywords → should go deterministic, not crudTemplate
+    registerFeature(surface, 'btn1', '显示详情', 'button');
+    const target = { surfaceKey: 's1', featureKey: 'btn1', scenarioType: 'normal' as const, priority: { level: 'normal' as const, source: 'system' as const } };
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.smoke);
+    expect(plan).not.toBeNull();
+    expect(plan!.plannerLevel).toBe('deterministic');
+    expect(plan!.steps.some(s => s.tool === 'browser_click')).toBe(true);
+    expect(plan!.steps.some(s => s.description.includes('显示详情'))).toBe(true);
+  });
+
+  it("unknown feature type still falls through to template/llm (only true LLM case)", () => {
+    const model = createCoverageModel();
+    registerModule(model, 'mod1', 'M');
+    const surface = registerSurface(model, 'mod1', 's1', 'http://example.com/complex');
+    registerFeature(surface, 'unk1', 'weird-element', 'unknown');
+    const target = { surfaceKey: 's1', featureKey: 'unk1', scenarioType: 'normal' as const, priority: { level: 'normal' as const, source: 'system' as const } };
+    const plan = generateTestPlan(model, target, COVERAGE_POLICIES.full);
+    expect(plan).not.toBeNull();
+    // Unknown should NOT get deterministic — genuinely uncertain
+    expect(plan!.plannerLevel).not.toBe('deterministic');
+  });
+});
+
+describe("Iteration 2 ⑤: comprehensive planner coverage", () => {
+  it("every known feature type gets a REAL plan under full policy (no bare LLM placeholder)", () => {
+    const knownTypes = [
+      'link', 'tab', 'navigation',
+      'checkbox', 'radio', 'pagination',
+      'text-input', 'number-input',
+      'dropdown', 'button',
+      'form', 'table', 'search', 'upload', 'modal',
+    ];
+    for (const type of knownTypes) {
+      const model = createCoverageModel();
+      registerModule(model, 'mod1', 'M');
+      const surface = registerSurface(model, 'mod1', 's1', 'http://example.com/p');
+      registerFeature(surface, `feat_${type}`, `Test ${type}`, type as any);
+      const target = { surfaceKey: 's1', featureKey: `feat_${type}`, scenarioType: 'normal' as const, priority: { level: 'normal' as const, source: 'system' as const } };
+      const plan = generateTestPlan(model, target, COVERAGE_POLICIES.full);
+      expect(plan).not.toBeNull();
+      // Real plan = more than the bare "[LLM] Analyze and test..." single step.
+      // Under full policy, every known type must get deterministic or template
+      // (not llm stub).
+      expect(['deterministic', 'template']).toContain(plan!.plannerLevel);
+    }
   });
 });

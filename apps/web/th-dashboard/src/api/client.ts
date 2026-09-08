@@ -43,6 +43,7 @@ export const api = {
           images: data.images,
           maxTurns: data.maxTurns,
           maxRetriesPerAction: data.maxRetriesPerAction,
+          testType: data.testType,
         },
       }),
     }).then(handleResponse<SessionCreateResponse>),

@@ -213,11 +213,38 @@ export function selectPlannerLevel(
 
   const t = thresholds[testType];
 
-  // Simple feature types that are always deterministic (regardless of risk)
-  const deterministicTypes: FeatureType[] = ['link', 'tab', 'navigation'];
+  // Feature types with a DETERMINISTIC plan — these always go deterministic
+  // regardless of risk score, because the deterministic planner has a proper
+  // real plan for them (not a placeholder). Forcing them through risk-score
+  // logic would route them to template/llm when no template matches, which
+  // was the exact bug that made text-input fall to the LLM stub.
+  const deterministicTypes: FeatureType[] = [
+    'link', 'tab', 'navigation',
+    'checkbox', 'radio', 'pagination',
+    'dropdown', 'button',
+  ];
   if (deterministicTypes.includes(featureType)) {
     return 'deterministic';
   }
+
+  // text-input/number-input have solid deterministic plans (type + verify).
+  // They should only escalate to template/llm at genuinely high risk —
+  // never by default, otherwise the most common element type falls through
+  // to the LLM planner for no reason.
+  if (featureType === 'text-input' || featureType === 'number-input') {
+    if (riskScore < t.llm) return 'deterministic';
+    return 'template';
+  }
+
+  // form / table / search / upload / modal — these genuinely benefit from
+  // template specificity. Route to template by default.
+  const templateTypes: FeatureType[] = ['form', 'table', 'search', 'upload', 'modal'];
+  if (templateTypes.includes(featureType)) {
+    return 'template';
+  }
+
+  // unknown — genuinely uncertain, only LLM can reason about it
+  if (featureType === 'unknown') return 'llm';
 
   if (riskScore < t.template) return 'deterministic';
   if (riskScore < t.llm) return 'template';
@@ -234,8 +261,16 @@ const deterministicPlanner: Planner = {
   name: 'deterministic',
 
   canHandle(surface, feature, target): boolean {
-    // Handle simple interaction types
-    const simpleTypes: FeatureType[] = ['link', 'tab', 'navigation', 'checkbox', 'radio', 'pagination'];
+    // Handle simple interaction types + the most common element types
+    // that have well-defined actions. The goal is to make the LLM planner
+    // genuinely rare — only reached for 'unknown' features.
+    const simpleTypes: FeatureType[] = [
+      'link', 'tab', 'navigation',
+      'checkbox', 'radio', 'pagination',
+      'text-input', 'number-input',
+      'dropdown',       // select option + verify
+      'button',         // click + verify state change
+    ];
     return simpleTypes.includes(feature.type);
   },
 
@@ -243,6 +278,35 @@ const deterministicPlanner: Planner = {
     const steps: TestPlanStep[] = [];
 
     switch (feature.type) {
+      case 'text-input':
+      case 'number-input': {
+        // The most common interactive element. Deterministic plan:
+        // type a representative value → verify the value took effect.
+        const value = feature.type === 'number-input' ? '123' : 'test-input-验证';
+        steps.push({
+          description: `Type "${value}" into "${feature.name}"`,
+          tool: 'browser_type',
+          toolArgs: { element: feature.name, text: value },
+          expectedOutcome: 'Input accepted, value visible in field',
+          scenarioType: target.scenarioType,
+        });
+        if (target.scenarioType === 'validation') {
+          steps.push({
+            description: `Clear "${feature.name}" and submit empty to verify required validation`,
+            expectedOutcome: 'Validation error or graceful handling',
+            scenarioType: 'validation',
+          });
+        } else if (target.scenarioType === 'boundary') {
+          steps.push({
+            description: `Type an extremely long string into "${feature.name}" to test limits`,
+            tool: 'browser_type',
+            expectedOutcome: 'Value truncated or accepted gracefully',
+            scenarioType: 'boundary',
+          });
+        }
+        break;
+      }
+
       case 'link':
         steps.push({
           description: `Click link "${feature.name}" and verify navigation`,
@@ -305,6 +369,46 @@ const deterministicPlanner: Planner = {
           });
         }
         break;
+
+      case 'dropdown': {
+        // A single dropdown select: open, pick an option, verify state change.
+        // Validation for dropdown is rare; keep it to normal + boundary.
+        steps.push({
+          description: `Open "${feature.name}" and select an option`,
+          tool: 'browser_select_option',
+          expectedOutcome: 'Selected option visible, any dependent state updates',
+          scenarioType: target.scenarioType,
+        });
+        if (target.scenarioType === 'boundary') {
+          steps.push({
+            description: `Select the first or last option in "${feature.name}" to check edge options`,
+            tool: 'browser_select_option',
+            expectedOutcome: 'Edge option accepted gracefully',
+            scenarioType: 'boundary',
+          });
+        }
+        break;
+      }
+
+      case 'button': {
+        // Generic (non-CRUD) button. CRUD-named buttons are routed to crudTemplate
+        // (template level, richer plan). Generic buttons get a simple click+verify.
+        steps.push({
+          description: `Click "${feature.name}" and observe resulting state change`,
+          tool: 'browser_click',
+          expectedOutcome: 'Button responded — page/dialog/state changed',
+          scenarioType: target.scenarioType,
+        });
+        if (target.scenarioType === 'error') {
+          steps.push({
+            description: `Click "${feature.name}" twice rapidly and verify no double-submission or crash`,
+            tool: 'browser_click',
+            expectedOutcome: 'Double-click handled gracefully',
+            scenarioType: 'error',
+          });
+        }
+        break;
+      }
 
       default:
         steps.push({
@@ -499,7 +603,18 @@ const searchTemplate: TemplatePlanner = {
   name: 'search',
 
   canHandle(surface, feature, target): boolean {
-    return feature.type === 'search';
+    // Handles dedicated search features AND text-inputs whose intent is search
+    // (e.g. a homepage search box). The template generates the full
+    // type → submit → verify-results flow, which plain text-input typing lacks.
+    if (feature.type === 'search') return true;
+    if (feature.type === 'text-input' && feature.intentRelevance) {
+      const isSearchIntent =
+        feature.intentRelevance.matchedTerms?.some(t =>
+          /search|搜索|query|查询|find|查找|百度一下/i.test(t)
+        ) ?? false;
+      if (isSearchIntent && target.scenarioType === 'normal') return true;
+    }
+    return false;
   },
 
   generate(surface, feature, target): TestPlan {
@@ -507,11 +622,24 @@ const searchTemplate: TemplatePlanner = {
 
     if (target.scenarioType === 'normal') {
       steps.push({
-        description: `Enter search term in "${feature.name}" and submit`,
+        description: `Enter search term in "${feature.name}"`,
         tool: 'browser_type',
-        expectedOutcome: 'Search results displayed',
+        toolArgs: { element: feature.name, text: 'test-query-验证' },
+        expectedOutcome: 'Search term visible in search box',
         scenarioType: 'normal',
       });
+      // Find a submit/search button on the surface for the full flow
+      const submitButton = surface.features.find(f =>
+        f.type === 'button' && /search|搜索|百度一下|go|查/i.test(f.name)
+      );
+      if (submitButton) {
+        steps.push({
+          description: `Click "${submitButton.name}" to submit the search`,
+          tool: 'browser_click',
+          expectedOutcome: 'Search results page loads',
+          scenarioType: 'normal',
+        });
+      }
       steps.push({
         description: 'Verify search results match the query',
         expectedOutcome: 'Results contain matching items',
@@ -703,20 +831,88 @@ const crudTemplate: TemplatePlanner = {
   },
 };
 
+// ─── Generic Input Template ──────────────────────────────────────────────────
+
+/**
+ * Generic input template — safety net for text/number inputs that escalate
+ * to template level (high risk) but don't match any specialized template.
+ * Without this, they would fall through to the LLM planner placeholder.
+ */
+const inputTemplate: TemplatePlanner = {
+  name: 'input',
+
+  canHandle(surface, feature, _target): boolean {
+    return feature.type === 'text-input' || feature.type === 'number-input';
+  },
+
+  generate(surface, feature, target): TestPlan {
+    const steps: TestPlanStep[] = [];
+    const value = feature.type === 'number-input' ? '123' : 'test-input-验证';
+
+    steps.push({
+      description: `Type "${value}" into "${feature.name}"`,
+      tool: 'browser_type',
+      toolArgs: { element: feature.name, text: value },
+      expectedOutcome: 'Input accepted, value visible in field',
+      scenarioType: target.scenarioType,
+    });
+
+    if (target.scenarioType === 'validation') {
+      steps.push({
+        description: `Enter invalid format data in "${feature.name}" and observe validation`,
+        tool: 'browser_type',
+        expectedOutcome: 'Validation error or graceful handling',
+        scenarioType: 'validation',
+      });
+    } else if (target.scenarioType === 'boundary') {
+      steps.push({
+        description: `Enter boundary values (empty, max length) in "${feature.name}"`,
+        tool: 'browser_type',
+        expectedOutcome: 'Boundary values handled gracefully',
+        scenarioType: 'boundary',
+      });
+    }
+
+    // Look for a nearby submit control to complete the interaction
+    const submitButton = surface.features.find(f =>
+      f.type === 'button' && /submit|提交|保存|确定|确认|save|ok/i.test(f.name)
+    );
+    if (submitButton) {
+      steps.push({
+        description: `Click "${submitButton.name}" to submit`,
+        tool: 'browser_click',
+        expectedOutcome: 'Form processed, result visible',
+        scenarioType: target.scenarioType,
+      });
+    }
+
+    return {
+      surfaceKey: target.surfaceKey,
+      featureKey: target.featureKey,
+      scenarioType: target.scenarioType,
+      plannerLevel: 'template',
+      steps,
+      priority: target.priority.level,
+    };
+  },
+};
+
 // ─── Template Registry ───────────────────────────────────────────────────────
 
 /**
  * Registry of all template planners.
  * Order matters: more specific templates first.
  * CRUD must come before form because CRUD buttons are also buttons.
+ * inputTemplate is last — it's the generic fallback for text/number inputs.
  */
 const TEMPLATE_PLANNERS: TemplatePlanner[] = [
   crudTemplate,     // CRUD operations (most specific for buttons)
   formTemplate,     // Generic forms
   tableTemplate,
-  searchTemplate,
+  searchTemplate,   // search features + search-intent text-inputs
   uploadTemplate,
   modalTemplate,
+  inputTemplate,    // generic text/number input fallback
 ];
 
 /**
@@ -885,7 +1081,21 @@ export function generateTestPlan(
   const riskScore = calculateRiskScore(targetSurface, targetFeature, targetModule);
 
   // Use policy.testType directly instead of inferring from policy shape
-  const plannerLevel = selectPlannerLevel(riskScore, targetFeature.type, policy.testType);
+  let plannerLevel = selectPlannerLevel(riskScore, targetFeature.type, policy.testType);
+
+  // Specificity override: if a SPECIALIZED template pattern matches this feature,
+  // prefer the template over the generic deterministic plan — templates
+  // encode the full interaction flow (e.g. search: type → submit → verify).
+  // The generic inputTemplate does NOT trigger the override: for a plain
+  // text-input, the deterministic plan is equivalent and cheaper.
+  if (plannerLevel === 'deterministic') {
+    const matchingTemplate = TEMPLATE_PLANNERS.find(t =>
+      t.name !== 'input' && t.canHandle(targetSurface, targetFeature, target)
+    );
+    if (matchingTemplate) {
+      plannerLevel = 'template';
+    }
+  }
 
   // Find matching planner
   const planner = PLANNERS.find(p => {

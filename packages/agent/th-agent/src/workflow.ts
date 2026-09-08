@@ -80,17 +80,28 @@ export interface WorkflowContext {
   coverageComplete: boolean;
   coverageInitialized: boolean;
   lastRawSnapshot: string;
+  /** Monotonically increasing snapshot version — key for lifecycle diagnostics */
+  snapshotVersion: number;
   /** Phase 4: Coverage model and policy (set when entering TEST) */
   coverageModel?: import('./coverage.js').CoverageModel;
   coveragePolicy?: import('./coverage.js').CoveragePolicy;
   /** Phase 4: Current coverage target for this turn */
   currentCoverageTarget?: import('./coverage.js').CoverageTarget;
+  /** Intent Model: structured understanding of what the user wants tested */
+  testIntent?: import('./coverage.js').TestIntent;
   /** The target URL being tested — used for deterministic NAVIGATE→TEST */
   targetUrl: string;
   /** Track how many consecutive turns the same target was selected but not acted on */
   targetStagnationCount: number;
   /** Feature keys that have been skipped due to stagnation */
   skippedTargets: string[];
+  /**
+   * Interaction actions performed BEFORE coverage model initialization
+   * (e.g. the click that triggered NAVIGATE→TEST). Replayed through
+   * resolveActionFeature() after coverage init so boundary actions
+   * get accounted for too.
+   */
+  pendingActions: Array<{ toolName: string; toolArgs: Record<string, unknown>; success: boolean; turn: number }>;
   /** Coverage: which transitions have fired */
   traversedTransitions: string[];
   /** Invariant violations detected */
@@ -107,6 +118,8 @@ export interface WorkflowContext {
   repeatedActionCount: number;
   /** Last aria snapshot (before current action) — for verification diff */
   lastSnapshot: string;
+  /** Current snapshot refs for action/feature lifecycle diagnostics */
+  currentSnapshotRefs: string[];
   /** Action verification: consecutive failures detected by verify module */
   verificationFailures: number;
   /** Action verification: last outcome */
@@ -130,6 +143,22 @@ function normalizeUrlForCompare(url: string): string {
   } catch {
     return url.toLowerCase().replace(/\/$/, '');
   }
+}
+
+/**
+ * Extract aria refs (e.g. "e37", "f13e87") from a Playwright aria snapshot.
+ * Refs appear as [ref=XX] markers or as bare ref tokens in the snapshot tree.
+ */
+export function extractSnapshotRefs(snapshotText: string): string[] {
+  const refs = new Set<string>();
+  // Playwright aria snapshots mark elements with [ref=eXX] (or f-prefixed
+  // composite refs like [ref=f13e87]). That is the only authoritative format.
+  const refPattern = /\[ref=([a-z]\d*(?:e\d+)+|[ef]\d+)\]/gi;
+  let m: RegExpExecArray | null;
+  while ((m = refPattern.exec(snapshotText)) !== null) {
+    refs.add(m[1]!);
+  }
+  return [...refs];
 }
 
 // ─── State Invariants ───
@@ -478,6 +507,10 @@ export function updateWorkflowContext(
       updated.lastPageContent = text.toLowerCase();
       // Phase 4: Keep original-case snapshot for feature discovery
       updated.lastRawSnapshot = text;
+      // P2: bump snapshot version on every new snapshot observation
+      updated.snapshotVersion++;
+      // P1: extract refs for action/feature lifecycle diagnostics
+      updated.currentSnapshotRefs = extractSnapshotRefs(text);
     }
     // Target reached: substantial content on page AND (URL matches target OR we're navigating)
     if (text.length > 200 && currentState === WorkflowState.NAVIGATE) {
@@ -651,14 +684,17 @@ export function createInitialContext(maxTurns: number = 99, targetUrl: string = 
     lastActionKey: '',
     repeatedActionCount: 0,
     lastSnapshot: '',
+    currentSnapshotRefs: [],
     verificationFailures: 0,
     lastVerificationOutcome: '',
     detectedErrors: [],
     coverageComplete: false,
     coverageInitialized: false,
     lastRawSnapshot: '',
+    snapshotVersion: 0,
     targetUrl,
     targetStagnationCount: 0,
     skippedTargets: [],
+    pendingActions: [],
   };
 }

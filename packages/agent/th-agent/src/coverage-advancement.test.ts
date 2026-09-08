@@ -26,7 +26,10 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const SMOKE_POLICY = COVERAGE_POLICIES.smoke;
+// Iteration 2 ①: smoke policy now has scope 'intent_relevant' — these tests
+// verify gap-exclusion MECHANICS (tested → excluded), not scope semantics,
+// so they use scope 'all' to keep every feature in scope.
+const SMOKE_POLICY = { ...COVERAGE_POLICIES.smoke, scope: 'all' as const };
 
 function makeModel(): CoverageModel {
   const model = createCoverageModel();
