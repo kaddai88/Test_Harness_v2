@@ -164,6 +164,8 @@ export interface AgentLoopOptions {
   siteHints?: SiteHints;
   /** Uploaded images (base64 data URLs) for vision-capable LLMs */
   images?: string[];
+  /** Optional diagnostic hook for decision-time snapshot identity */
+  onDecisionSnapshotIdentity?: (identity: import('./workflow.js').SnapshotIdentity | null) => void;
 }
 
 // ─── Phase 4: Coverage Helper Functions ──────────────────────────────────────
@@ -305,7 +307,10 @@ export class AgentLoop {
       eventBus: options.eventBus,
       container: options.container,
       sessionLog,
-      state: new Map([["loginGuard", createLoginGuardState()]]),
+      state: new Map<string, unknown>([
+        ["loginGuard", createLoginGuardState()],
+        ["onDecisionSnapshotIdentity", options.onDecisionSnapshotIdentity],
+      ]),
       turnCount: 0,
       stepCount: 0,
       maxTurns: options.config.maxTurns ?? 99,
@@ -843,11 +848,17 @@ export class AgentLoop {
     // Track whether the current coverage target was matched by any action this turn
     let targetMatchedThisTurn = false;
 
-    // P2: The snapshot version the LLM based its decisions on. Tool execution
-    // may itself produce new snapshots (auto-snapshot after actions), so any
-    // mismatch between decisionVersion and the version at ALIGN time proves
-    // the action was decided against a stale snapshot.
-    const decisionSnapshotVersion = context.workflow.snapshotVersion;
+    // P2: Persist the atomic snapshot identity at the actual model-decision
+    // boundary. Store an immutable copy so later snapshot updates cannot
+    // mutate the identity the LLM actually saw.
+    const decisionSnapshotIdentity = context.workflow.currentSnapshotIdentity
+      ? { ...context.workflow.currentSnapshotIdentity }
+      : null;
+    context.workflow.decisionSnapshotIdentity = decisionSnapshotIdentity;
+    const decisionHook = context.state.get('onDecisionSnapshotIdentity') as
+      | ((identity: import('./workflow.js').SnapshotIdentity | null) => void)
+      | undefined;
+    decisionHook?.(decisionSnapshotIdentity ? { ...decisionSnapshotIdentity } : null);
 
     for (const toolCall of response.toolCalls) {
       // Log tool call
@@ -1269,7 +1280,12 @@ export class AgentLoop {
                 verdict = 'resolver_miss (refs consistent; resolver returned nothing)';
               }
 
-              logger.info(`[ALIGN] v${context.workflow.snapshotVersion} (decided@v${decisionSnapshotVersion}) target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
+              const currentId = context.workflow.currentSnapshotIdentity;
+              const currentIdStr = currentId ? `v${currentId.version}:${currentId.hash}` : '—';
+              const decidedIdStr = decisionSnapshotIdentity
+                ? `v${decisionSnapshotIdentity.version}:${decisionSnapshotIdentity.hash}`
+                : '—';
+              logger.info(`[ALIGN] current=${currentIdStr} decided=${decidedIdStr} target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
 
               // Per-turn, only for unmatched: at debug, dump the few candidate
               // features on the target surface that share the action's element type.
@@ -1386,9 +1402,20 @@ export class AgentLoop {
               abortSignal: context.abortSignal,
             });
             if (snapResult.success && snapResult.data) {
-              snapshotText = String((snapResult.data as any).text ?? '');
-              context.workflow.lastRawSnapshot = snapshotText;
-              context.workflow.snapshotVersion++;
+              const snapshotData = snapResult.data as Record<string, unknown>;
+              snapshotText = String(snapshotData.text ?? '');
+              // Route the initial TEST snapshot through the same lifecycle
+              // updater as ordinary browser_snapshot results. This keeps
+              // refs, identity, page content, and target guards coherent.
+              context.workflow = updateWorkflowContext(
+                context.workflow,
+                'browser_snapshot',
+                {},
+                true,
+                snapshotData,
+                context.workflowState,
+              );
+              snapshotText = context.workflow.lastRawSnapshot;
             }
           }
 

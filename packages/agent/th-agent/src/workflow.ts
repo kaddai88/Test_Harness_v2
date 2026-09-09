@@ -35,6 +35,14 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
+import { normalizeSnapshot } from './surface-signature.js';
+import { createHash } from 'node:crypto';
+import type {
+  CurrentObservationState,
+  DecisionProvenance,
+  SessionIdentitySemantics,
+} from './identity-semantics.js';
+
 export enum WorkflowState {
   INIT = 'init',
   LOGIN = 'login',
@@ -81,7 +89,11 @@ export interface WorkflowContext {
   coverageInitialized: boolean;
   lastRawSnapshot: string;
   /** Monotonically increasing snapshot version — key for lifecycle diagnostics */
-  snapshotVersion: number;
+  currentSnapshotIdentity: SnapshotIdentity | null;
+  /** Captured at the start of tool execution: the snapshot identity the LLM
+   * based its decision on. Mismatch with current identity = stale-decision
+   * evidence. */
+  decisionSnapshotIdentity: SnapshotIdentity | null;
   /** Phase 4: Coverage model and policy (set when entering TEST) */
   coverageModel?: import('./coverage.js').CoverageModel;
   coveragePolicy?: import('./coverage.js').CoveragePolicy;
@@ -126,6 +138,36 @@ export interface WorkflowContext {
   lastVerificationOutcome: string;
   /** Errors detected during testing (for reporting) */
   detectedErrors: Array<{ tool: string; error: string; turn: number }>;
+  /** P2-E: Current observation occurrence (authoritative for validation) */
+  currentObservation: import('./identity-semantics.js').CurrentObservationState;
+  /** P2-E: Decision provenance (exact occurrence + content identity, or LEGACY_UNAVAILABLE) */
+  decisionProvenance: import('./identity-semantics.js').DecisionProvenance | null;
+  /** P2-E: Occurrence counter for generating unique occurrence IDs */
+  occurrenceCounter: number;
+  /** P2-E: Observation normalization contract version */
+  observationContractVersion: string;
+  /** P2-E: Structural projection contract version */
+  structuralContractVersion: string;
+  /** P2-E: Session identity semantics mode (pinned at session creation) */
+  sessionIdentitySemantics: import('./identity-semantics.js').SessionIdentitySemantics;
+}
+
+// ─── Snapshot Identity ───────────────────────────────────────────────────────
+
+/** Atomic snapshot identity — version and content hash together.
+ * Keeping them atomic prevents the "version same but content different"
+ * invariant violation. */
+export interface SnapshotIdentity {
+  version: number;
+  hash: string;
+}
+
+/** Compute a short stable hash for a normalized snapshot.
+ * Uses SHA-256 and returns the first 12 hex chars — enough for identity,
+ * short enough for logs. */
+export function computeSnapshotHash(normalizedSnapshot: string): string {
+  if (!normalizedSnapshot) return '';
+  return createHash('sha256').update(normalizedSnapshot, 'utf8').digest('hex').slice(0, 12);
 }
 
 // ─── State Invariants ───
@@ -468,6 +510,46 @@ Summarize your testing:
   }
 }
 
+/**
+ * Apply one authoritative snapshot observation to workflow state.
+ * All snapshot entry points (ordinary tool results and TEST initialization)
+ * must use this helper so identity/refs/page content cannot diverge.
+ */
+export function applySnapshotObservation(
+  context: WorkflowContext,
+  text: string,
+  currentState?: WorkflowState,
+): WorkflowContext {
+  const updated = { ...context };
+  if (!text) return updated;
+
+  updated.lastSnapshot = updated.lastPageContent;
+  updated.lastPageContent = text.toLowerCase();
+  updated.lastRawSnapshot = text;
+  updated.currentSnapshotRefs = extractSnapshotRefs(text);
+
+  const normalized = normalizeSnapshot(text);
+  const newHash = computeSnapshotHash(normalized);
+  const prevVersion = updated.currentSnapshotIdentity?.version ?? 0;
+  const newVersion = updated.currentSnapshotIdentity?.hash === newHash
+    ? prevVersion
+    : prevVersion + 1;
+  updated.currentSnapshotIdentity = { version: newVersion, hash: newHash };
+
+  if (text.length > 200 && currentState === WorkflowState.NAVIGATE) {
+    updated.targetReached = true;
+  }
+  if (currentState === WorkflowState.NAVIGATE && updated.targetUrl && updated.currentPageUrl) {
+    const currentNorm = normalizeUrlForCompare(updated.currentPageUrl);
+    const targetNorm = normalizeUrlForCompare(updated.targetUrl);
+    if (currentNorm === targetNorm || currentNorm.startsWith(targetNorm + '/')) {
+      updated.targetReached = true;
+    }
+  }
+
+  return updated;
+}
+
 // ─── Context Update ───
 
 export function updateWorkflowContext(
@@ -502,27 +584,7 @@ export function updateWorkflowContext(
   if (toolName === 'browser_snapshot' && success && resultData) {
     const text = String(resultData.text ?? '');
     if (text) {
-      // Save previous snapshot for verification diff, then update
-      updated.lastSnapshot = updated.lastPageContent;
-      updated.lastPageContent = text.toLowerCase();
-      // Phase 4: Keep original-case snapshot for feature discovery
-      updated.lastRawSnapshot = text;
-      // P2: bump snapshot version on every new snapshot observation
-      updated.snapshotVersion++;
-      // P1: extract refs for action/feature lifecycle diagnostics
-      updated.currentSnapshotRefs = extractSnapshotRefs(text);
-    }
-    // Target reached: substantial content on page AND (URL matches target OR we're navigating)
-    if (text.length > 200 && currentState === WorkflowState.NAVIGATE) {
-      updated.targetReached = true;
-    }
-    // Also check URL match (handles cases where URL is the target but content was not yet observed)
-    if (currentState === WorkflowState.NAVIGATE && context.targetUrl && updated.currentPageUrl) {
-      const currentNorm = normalizeUrlForCompare(updated.currentPageUrl);
-      const targetNorm = normalizeUrlForCompare(context.targetUrl);
-      if (currentNorm === targetNorm || currentNorm.startsWith(targetNorm + '/')) {
-        updated.targetReached = true;
-      }
+      Object.assign(updated, applySnapshotObservation(context, text, currentState));
     }
   }
 
@@ -691,10 +753,21 @@ export function createInitialContext(maxTurns: number = 99, targetUrl: string = 
     coverageComplete: false,
     coverageInitialized: false,
     lastRawSnapshot: '',
-    snapshotVersion: 0,
+    currentSnapshotIdentity: null,
+    decisionSnapshotIdentity: null,
     targetUrl,
     targetStagnationCount: 0,
     skippedTargets: [],
     pendingActions: [],
+    // P2-E: Initialize new identity semantics fields
+    currentObservation: { kind: 'none' } as CurrentObservationState,
+    decisionProvenance: null as DecisionProvenance | null,
+    occurrenceCounter: 0,
+    observationContractVersion: 'v1',
+    structuralContractVersion: 'v1',
+    sessionIdentitySemantics: {
+      mode: 'LEGACY',
+      pinnedAt: Date.now(),
+    } as SessionIdentitySemantics,
   };
 }

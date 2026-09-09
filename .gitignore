@@ -21,6 +21,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.backup
 
 # Coverage
 coverage/
