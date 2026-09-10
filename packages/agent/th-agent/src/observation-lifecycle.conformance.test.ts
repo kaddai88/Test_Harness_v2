@@ -24,24 +24,26 @@ import {
 import type { CurrentObservationState } from './identity-semantics.js';
 
 describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
-  const defaultContext = {
+  // Helper to create a fresh context for each test
+  const createContext = () => ({
     currentObservation: { kind: 'none' } as CurrentObservationState,
     occurrenceCounter: 0,
     observationContractVersion: 'v1',
     structuralContractVersion: 'v1',
-  };
+  });
 
   describe('C8: same content ingested twice → content SAME, occurrence DIFFERENT, current advances', () => {
     it('two identical observations create different occurrences with same content identity', () => {
       const rawSnapshot = `button "Submit" [ref=e37]`;
       const url = 'https://example.com/page';
+      const context = createContext();
 
       // First ingestion
       const result1 = ingestSuccessfulObservation(
         rawSnapshot,
         url,
         'complete',
-        defaultContext
+        context
       );
 
       expect(result1.ingestionResult.success).toBe(true);
@@ -57,7 +59,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         url,
         'complete',
         {
-          ...defaultContext,
+          ...context,
           currentObservation: result1.currentObservation,
           occurrenceCounter: result1.occurrenceCounter,
         }
@@ -101,7 +103,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         rawSnapshot,
         url,
         'empty',
-        defaultContext
+        createContext()
       );
 
       expect(result.ingestionResult.success).toBe(true);
@@ -119,7 +121,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         rawSnapshot,
         url,
         'empty',
-        defaultContext
+        createContext()
       );
       expect(emptyResult.ingestionResult.success).toBe(true);
       expect(emptyResult.ingestionResult.occurrence).toBeDefined();
@@ -129,7 +131,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         rawSnapshot,
         url,
         'acquisition_failure',
-        defaultContext
+        createContext()
       );
       expect(failureResult.ingestionResult.success).toBe(false);
       expect(failureResult.ingestionResult.occurrence).toBeUndefined();
@@ -147,7 +149,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         rawSnapshot,
         url,
         'accepted_partial',
-        defaultContext,
+        createContext(),
         completenessScope
       );
 
@@ -169,7 +171,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         rawSnapshot,
         url,
         'accepted_partial',
-        defaultContext
+        createContext()
         // No completenessScope provided
       );
 
@@ -186,7 +188,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'acquisition_failure',
-        defaultContext
+        createContext()
       );
 
       expect(result.ingestionResult.success).toBe(false);
@@ -200,7 +202,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'malformed_partial',
-        defaultContext
+        createContext()
       );
 
       expect(result.ingestionResult.success).toBe(false);
@@ -213,7 +215,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'absent_body',
-        defaultContext
+        createContext()
       );
 
       expect(result.ingestionResult.success).toBe(false);
@@ -226,7 +228,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'explicit_unavailable',
-        defaultContext
+        createContext()
       );
 
       expect(result.ingestionResult.success).toBe(false);
@@ -252,7 +254,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'complete',
-        defaultContext
+        createContext()
       );
 
       expect(initialResult.ingestionResult.success).toBe(true);
@@ -264,7 +266,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         'https://example.com/page',
         'acquisition_failure',
         {
-          ...defaultContext,
+          ...createContext(),
           currentObservation: initialResult.currentObservation,
           occurrenceCounter: initialResult.occurrenceCounter,
         }
@@ -293,7 +295,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
         `button "Submit" [ref=e37]`,
         'https://example.com/page',
         'acquisition_failure',
-        defaultContext
+        createContext()
       );
 
       // On failure: no occurrence, no current change, no counter increment
@@ -310,7 +312,7 @@ describe('P2-E Conformance C8-C12: Observation Occurrence Lifecycle', () => {
       const url = 'https://example.com/page';
 
       // Ingest same content three times
-      let context = defaultContext;
+      let context = createContext();
       const occurrences = [];
 
       for (let i = 0; i < 3; i++) {

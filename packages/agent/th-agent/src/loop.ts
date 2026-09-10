@@ -180,6 +180,10 @@ export interface AgentLoopOptions {
   identitySemanticsMode?: import('./identity-semantics.js').IdentitySemanticsMode;
   /** P2-E I7-B-R2: diagnostic hook for request-bound P2E provenance */
   onDecisionProvenance?: (provenance: import('./identity-semantics.js').DecisionProvenance) => void;
+  /** P2-E I8-A: Global rollout policy (read ONCE at session creation) */
+  rolloutPolicy?: import('./session-persistence.js').GlobalRolloutPolicy;
+  /** P2-E I8-A: Session persistence store for restart recovery */
+  sessionPersistenceStore?: import('./session-persistence.js').SessionPersistenceStore;
 }
 
 // ─── Phase 4: Coverage Helper Functions ──────────────────────────────────────
@@ -309,6 +313,68 @@ export class AgentLoop {
       );
     }
 
+    // ── P2-E I8-A: Session Semantics Pinning & Recovery ──
+    // CRITICAL: Global rollout policy is read ONCE at session creation.
+    // Persisted mode is the runtime correctness authority.
+    // Worker restart restores persisted mode, does NOT re-read global flag.
+    let sessionSemantics: import('./identity-semantics.js').SessionIdentitySemantics;
+    let recoveredState: import('./identity-semantics.js').PersistedSessionState | null = null;
+
+    if (options.sessionPersistenceStore) {
+      // Attempt to recover existing session state. A stored but invalid record
+      // must not be mistaken for a new session and repaired via global rollout.
+      const persistedCandidate = await options.sessionPersistenceStore.load(options.sessionId);
+      recoveredState = await import('./session-persistence.js').then(m =>
+        m.recoverSessionState(options.sessionId, options.sessionPersistenceStore!)
+      );
+
+      if (persistedCandidate && !recoveredState) {
+        throw new Error(`[I8-B-R2] persisted session ${options.sessionId} is invalid; recovery rejected`);
+      }
+
+      if (recoveredState) {
+        // Session recovery: restore persisted semantics (DO NOT re-read global flag)
+        sessionSemantics = recoveredState.semantics;
+        logger.info(`[I8-A] Session ${options.sessionId} recovered with mode=${sessionSemantics.mode}`);
+      } else {
+        // New session or legacy migration: read global rollout policy ONCE
+        const { createSessionState, migrateLegacySessionState } = await import('./session-persistence.js');
+
+        if (options.rolloutPolicy) {
+          // New session: resolve effective mode from the actual backend capability.
+          // A caller cannot assert capability through rollout configuration.
+          const { decideNewSessionMode } = await import('./rollout-compatibility.js');
+          const requestedMode = options.rolloutPolicy.getMode();
+          const rolloutDecision = decideNewSessionMode(
+            { getMode: () => requestedMode },
+            options.sessionPersistenceStore.capabilities,
+          );
+          sessionSemantics = {
+            mode: rolloutDecision.mode,
+            pinnedAt: Date.now(),
+            semanticsVersion: 'p2e-v1' as const,
+          };
+          await createSessionState(options.sessionId, {
+            getMode: () => rolloutDecision.mode,
+          }, options.sessionPersistenceStore);
+          logger.info(`[I8-B] Session ${options.sessionId} requested=${options.rolloutPolicy.getMode()} effective=${rolloutDecision.mode} reason=${rolloutDecision.reason}`);
+        } else {
+          // Legacy migration: no rollout policy, migrate to LEGACY
+          const migratedState = await migrateLegacySessionState(options.sessionId, options.sessionPersistenceStore);
+          sessionSemantics = migratedState.semantics;
+          recoveredState = migratedState;
+          logger.info(`[I8-A] Session ${options.sessionId} migrated from legacy to LEGACY`);
+        }
+      }
+    } else {
+      // No persistence store: use explicit mode or default to LEGACY
+      sessionSemantics = {
+        mode: options.identitySemanticsMode ?? 'LEGACY',
+        pinnedAt: Date.now(),
+        semanticsVersion: 'p2e-v1' as const,
+      };
+    }
+
     // Create the session log — the single source of truth
     const sessionLog = new SessionLog();
 
@@ -334,10 +400,18 @@ export class AgentLoop {
       abortSignal: abortController.signal,
       workflow: {
         ...createInitialContext(options.config.maxTurns ?? 99, options.target.url),
-        sessionIdentitySemantics: {
-          mode: options.identitySemanticsMode ?? 'LEGACY',
-          pinnedAt: Date.now(),
-        },
+        sessionIdentitySemantics: sessionSemantics,
+        // Restore recovered state if available
+        ...(recoveredState && {
+          decisionProvenance: recoveredState.lastDecisionProvenance,
+          // CRITICAL (I8-A-R2): Persisted current observation is historical evidence only.
+          // It is NOT authoritative after restart. Always require fresh observation.
+          // This enforces: "A session's correctness mode survives restart; a browser
+          // observation's authority does NOT automatically survive restart."
+          currentObservation: { kind: 'none' },
+          // Restore occurrence counter for restart-safe occurrence ID allocation
+          occurrenceCounter: recoveredState.occurrenceCounter,
+        }),
       },
       workflowState: WorkflowState.INIT,
       cognition: new CognitiveEngine({ storagePath: path.resolve(process.cwd(), '.cognition') }),

@@ -92,24 +92,28 @@ export function toObservationOutcome(outcome: AcquisitionOutcome): ObservationOu
 // ─── Occurrence Identity Allocator ───────────────────────────────────────────
 
 /**
- * Allocate a unique occurrence identity
+ * Allocate an occurrence identity without mutating caller state
  *
- * Occurrence identity represents EVENT identity, NOT content identity.
- * Two occurrences with identical content still have different occurrence IDs.
- *
- * Phase 1a: Session-local monotonic counter
- * Future phases may integrate with durable restart recovery.
+ * I8-A-R4: Allocation is a local reservation, not publication. The caller's
+ * counter is not advanced until the complete occurrence has been constructed
+ * and the publication commit succeeds.
  */
 export function allocateOccurrenceIdentity(
   context: { occurrenceCounter: number }
 ): ObservationOccurrenceIdentity {
-  const occurrenceId = `O${context.occurrenceCounter}`;
-  const timestamp = Date.now();
-
   return {
-    occurrenceId,
-    timestamp,
+    occurrenceId: `O${context.occurrenceCounter}`,
+    timestamp: Date.now(),
   };
+}
+
+/**
+ * Return the next counter for a successful local reservation.
+ * This is not durable publication; persistence must commit the counter and
+ * the externally observable occurrence/provenance as one record update.
+ */
+export function nextOccurrenceCounter(context: { occurrenceCounter: number }): number {
+  return context.occurrenceCounter + 1;
 }
 
 // ─── Atomic Ingestion ────────────────────────────────────────────────────────
@@ -259,12 +263,15 @@ export function incrementOccurrenceCounter(context: { occurrenceCounter: number 
 // ─── Ingestion Workflow ──────────────────────────────────────────────────────
 
 /**
- * Complete ingestion workflow: classify, ingest, install, increment
+ * Complete ingestion workflow: classify, ingest, install
  *
  * This is the high-level API for ingesting a successful observation.
  * It orchestrates the atomic ingestion and current installation.
  *
- * Returns the updated context with new current observation and incremented counter.
+ * I8-A-R3: occurrenceCounter is incremented atomically in allocateOccurrenceIdentity,
+ * so we don't need a separate increment step here.
+ *
+ * Returns the updated context with new current observation and updated counter.
  * If ingestion fails, returns the original context unchanged.
  */
 export function ingestSuccessfulObservation(
@@ -284,6 +291,7 @@ export function ingestSuccessfulObservation(
   ingestionResult: IngestionResult;
 } {
   // Attempt atomic ingestion
+  // CRITICAL (I8-A-R3): allocateOccurrenceIdentity increments the counter atomically
   const ingestionResult = atomicallyIngestObservation(
     rawSnapshot,
     url,
@@ -304,12 +312,15 @@ export function ingestSuccessfulObservation(
   // Install new occurrence as current
   const newCurrent = installCurrentObservation(context.currentObservation, ingestionResult.occurrence);
 
-  // Increment occurrence counter
-  const newCounter = incrementOccurrenceCounter(context);
+  // I8-A-R4: Reservation is committed only after the complete occurrence
+  // exists. The caller receives the next counter as part of the same local
+  // copy-on-write result; durable callers must persist it atomically with the
+  // occurrence/provenance before exposing the occurrence externally.
+  const committedCounter = nextOccurrenceCounter(context);
 
   return {
     currentObservation: newCurrent,
-    occurrenceCounter: newCounter,
+    occurrenceCounter: committedCounter,
     ingestionResult,
   };
 }

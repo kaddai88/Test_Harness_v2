@@ -221,10 +221,75 @@ export type IdentitySemanticsMode = 'LEGACY' | 'P2E';
  *
  * Persisted as part of session state to ensure mode survives restart.
  * Fields are readonly to enforce immutability invariant at type level.
+ *
+ * semanticsVersion distinguishes the persistence schema version from the mode value.
+ * This allows future P2E-v2 to reject/interpret old sessions safely.
  */
 export interface SessionIdentitySemantics {
   /** Pinned semantics mode (immutable for session lifetime) */
   readonly mode: IdentitySemanticsMode;
   /** When this mode was pinned (immutable) */
   readonly pinnedAt: number;
+  /** Persistence schema version (distinguishes mode value from schema interpretation) */
+  readonly semanticsVersion: 'p2e-v1';
+}
+
+/**
+ * Persisted session state for restart recovery
+ *
+ * Contains all information needed to restore a session's correctness authority
+ * after worker restart. The recordVersion ensures future code can safely
+ * interpret or reject old persisted state.
+ *
+ * CRITICAL INVARIANT (I8-A-R1):
+ * A session's correctness mode survives restart; a browser observation's
+ * authority does NOT automatically survive restart. On restart:
+ * - Session mode (P2E/LEGACY) is restored
+ * - Persisted current observation becomes non-authoritative (restart-invalidated)
+ * - Fresh authoritative observation is required before execution
+ * - Pending observation-dependent decisions must fail closed
+ */
+export interface PersistedSessionState {
+  /** Session identifier */
+  readonly sessionId: string;
+  /** Pinned identity semantics (mode + version) */
+  readonly semantics: SessionIdentitySemantics;
+  /** Last known decision provenance (may be LEGACY_UNAVAILABLE) */
+  readonly lastDecisionProvenance: DecisionProvenance;
+  /**
+   * Last known current observation state
+   *
+   * CRITICAL: On restart, this is historical evidence only.
+   * It is NOT automatically authoritative after restart.
+   * The persisted observation must be re-validated or replaced with a fresh
+   * authoritative observation before execution can proceed.
+   */
+  readonly lastCurrentObservation: CurrentObservationState;
+  /**
+   * Occurrence counter for restart-safe occurrence ID allocation
+   *
+   * Ensures occurrence IDs (O0, O1, O2, ...) are unique across the entire
+   * session lifetime, including across worker/process restarts.
+   *
+   * On restart, the counter is restored from this persisted value, preventing
+   * ID reuse that could cause old decision provenance to collide with new
+   * observations.
+   *
+   * I8-A-R3: This counter is incremented atomically when occurrences are
+   * allocated, ensuring crash-safe uniqueness.
+   */
+  readonly occurrenceCounter: number;
+  /**
+   * Persistence record schema version
+   *
+   * CRITICAL (I8-A-R3): This is separate from semanticsVersion.
+   * - recordVersion: Persistence schema version (how to decode the record)
+   * - semanticsVersion: P2E identity semantics contract version
+   *
+   * This allows the persistence schema to evolve independently of the
+   * identity semantics contract.
+   */
+  readonly recordVersion: 'record-v1';
+  /** Timestamp when this state was persisted */
+  readonly persistedAt: number;
 }
