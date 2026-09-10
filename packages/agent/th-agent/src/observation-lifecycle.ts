@@ -206,6 +206,7 @@ export function atomicallyIngestObservation(
       occurrenceId,
       outcome: observationOutcome,
       observationContent,
+      observationEnvelope: envelope,
       structuralEvidence,
     };
 

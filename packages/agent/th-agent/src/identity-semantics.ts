@@ -121,6 +121,12 @@ export interface ObservationOccurrence {
   outcome: ObservationOutcome;
   /** Observation content identity */
   observationContent: ObservationContentIdentity;
+  /**
+   * Canonical model-visible observation envelope used to derive the content identity.
+   * Keeping it on the occurrence makes the occurrence the single co-origin for
+   * the actual model-visible observation and request-bound provenance.
+   */
+  observationEnvelope?: import('./observation-projection.js').ObservationEnvelope;
   /** Structural evidence */
   structuralEvidence: StructuralEvidence;
 }

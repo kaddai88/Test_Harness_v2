@@ -70,6 +70,16 @@ import {
 import { CognitiveEngine } from "@test-harness/th-cognition";
 import * as path from "path";
 
+// P2-E I7-B-R1: Real AgentLoop integration
+import {
+  captureP2EDecisionProvenance,
+  validateBeforeToolDispatch,
+  handlePostToolExecution,
+  installAuthoritativeObservation,
+  isP2EActive,
+} from "./agentloop-integration.js";
+import { appendP2EObservationToRequest } from "./request-observation.js";
+
 // Phase 4: Coverage-driven testing
 import {
   createCoverageModel,
@@ -166,6 +176,10 @@ export interface AgentLoopOptions {
   images?: string[];
   /** Optional diagnostic hook for decision-time snapshot identity */
   onDecisionSnapshotIdentity?: (identity: import('./workflow.js').SnapshotIdentity | null) => void;
+  /** P2-E I7-B-R1: session-owned identity semantics mode, pinned by the caller */
+  identitySemanticsMode?: import('./identity-semantics.js').IdentitySemanticsMode;
+  /** P2-E I7-B-R2: diagnostic hook for request-bound P2E provenance */
+  onDecisionProvenance?: (provenance: import('./identity-semantics.js').DecisionProvenance) => void;
 }
 
 // ─── Phase 4: Coverage Helper Functions ──────────────────────────────────────
@@ -310,6 +324,7 @@ export class AgentLoop {
       state: new Map<string, unknown>([
         ["loginGuard", createLoginGuardState()],
         ["onDecisionSnapshotIdentity", options.onDecisionSnapshotIdentity],
+        ["onDecisionProvenance", options.onDecisionProvenance],
       ]),
       turnCount: 0,
       stepCount: 0,
@@ -317,7 +332,13 @@ export class AgentLoop {
       maxRetriesPerAction: options.config.maxRetriesPerAction ?? 3,
       toolFailureCounts: new Map(),
       abortSignal: abortController.signal,
-      workflow: createInitialContext(options.config.maxTurns ?? 99, options.target.url),
+      workflow: {
+        ...createInitialContext(options.config.maxTurns ?? 99, options.target.url),
+        sessionIdentitySemantics: {
+          mode: options.identitySemanticsMode ?? 'LEGACY',
+          pinnedAt: Date.now(),
+        },
+      },
       workflowState: WorkflowState.INIT,
       cognition: new CognitiveEngine({ storagePath: path.resolve(process.cwd(), '.cognition') }),
     };
@@ -704,9 +725,28 @@ export class AgentLoop {
     });
 
     // ── Step 2: Build and fire request waterfall ──
+    // P2E request-bound provenance must be captured before assembling the
+    // model-visible observation and before calling the LLM. Both derive from
+    // the same current ObservationOccurrence.
+    if (isP2EActive(context.workflow)) {
+      context.workflow = captureP2EDecisionProvenance(context.workflow);
+      const captured = context.workflow.decisionProvenance;
+      const provenanceHook = context.state.get('onDecisionProvenance') as
+        | ((provenance: import('./identity-semantics.js').DecisionProvenance) => void)
+        | undefined;
+      if (captured) provenanceHook?.(captured);
+      logger.debug(`[P2E-CAPTURE] request-bound provenance=${
+        captured === 'LEGACY_UNAVAILABLE' ? 'LEGACY_UNAVAILABLE' :
+          captured ? `${captured.occurrenceId}:${captured.observationContent.contentHash}` : 'null'
+      }`);
+    }
+
     // Get the (possibly modified) messages
-    const finalMessages: Message[] = preStepResult.messages.map(
-      (m, i) => messages[i] ?? { role: m.role as Message["role"], content: m.content }
+    const finalMessages: Message[] = appendP2EObservationToRequest(
+      preStepResult.messages.map(
+        (m, i) => messages[i] ?? { role: m.role as Message["role"], content: m.content }
+      ),
+      context.workflow,
     );
 
     // Build tool schemas
@@ -739,6 +779,11 @@ export class AgentLoop {
       maxTokens: requestConfig.maxTokens,
       toolCount: toolSchemas.length,
     });
+
+    // ── P2-E I7-B-R1 Integration Point 1: Request provenance already captured ──
+    // It was captured above before finalMessages was assembled and before the
+    // LLM call. Do not capture again here: that would be response/execute-time
+    // backfill and could replace O17 with a newer O18.
 
     // ── Step 3: Call LLM (streaming) ──
     const assembler = new StreamAssembler();
@@ -848,19 +893,62 @@ export class AgentLoop {
     // Track whether the current coverage target was matched by any action this turn
     let targetMatchedThisTurn = false;
 
-    // P2: Persist the atomic snapshot identity at the actual model-decision
-    // boundary. Store an immutable copy so later snapshot updates cannot
-    // mutate the identity the LLM actually saw.
-    const decisionSnapshotIdentity = context.workflow.currentSnapshotIdentity
-      ? { ...context.workflow.currentSnapshotIdentity }
-      : null;
-    context.workflow.decisionSnapshotIdentity = decisionSnapshotIdentity;
-    const decisionHook = context.state.get('onDecisionSnapshotIdentity') as
-      | ((identity: import('./workflow.js').SnapshotIdentity | null) => void)
-      | undefined;
-    decisionHook?.(decisionSnapshotIdentity ? { ...decisionSnapshotIdentity } : null);
+    // P2: Preserve the legacy snapshot identity only for LEGACY sessions.
+    // P2E sessions captured request-bound provenance before the model request
+    // above; recapturing here would be a response-time/current-time backfill
+    // and could replace O17 with a newer O18.
+    if (!isP2EActive(context.workflow)) {
+      const decisionSnapshotIdentity = context.workflow.currentSnapshotIdentity
+        ? { ...context.workflow.currentSnapshotIdentity }
+        : null;
+      context.workflow.decisionSnapshotIdentity = decisionSnapshotIdentity;
+      const decisionHook = context.state.get('onDecisionSnapshotIdentity') as
+        | ((identity: import('./workflow.js').SnapshotIdentity | null) => void)
+        | undefined;
+      decisionHook?.(decisionSnapshotIdentity ? { ...decisionSnapshotIdentity } : null);
+    }
 
     for (const toolCall of response.toolCalls) {
+      // ── P2-E I7-B-R1 Integration Point 2: Immediate pre-execution validation ──
+      // CRITICAL: Validate EACH observation-dependent action immediately before dispatch.
+      // This is inside the loop, so multi-tool responses revalidate before every action.
+      // Only active for P2E sessions; LEGACY sessions preserve existing behavior.
+      if (isP2EActive(context.workflow)) {
+        const preValidation = validateBeforeToolDispatch(context.workflow, toolCall);
+        logger.info(preValidation.diagnostic);
+
+        if (!preValidation.allowed) {
+          // BLOCKED: Do not dispatch the tool. Record a failed result and continue.
+          // This ensures blocked actions NEVER reach the executor.
+          const errorMsg = `BLOCKED by P2E provenance validation: ${preValidation.errorMessage}`;
+          sessionLog.append("tool/result", {
+            turn: context.turnCount,
+            step,
+            callId: toolCall.id,
+            name: toolCall.name,
+            success: false,
+            error: errorMsg,
+            data: null,
+            duration: 0,
+          });
+          toolResults.push({
+            toolCallId: toolCall.id,
+            name: toolCall.name,
+            success: false,
+            error: errorMsg,
+            data: null,
+          });
+          await eventBus.emit(AgentToolResultEvent, {
+            sessionId: context.sessionId,
+            turnNumber: context.turnCount,
+            toolName: toolCall.name,
+            success: false,
+            duration: 0,
+          });
+          continue;
+        }
+      }
+
       // Log tool call
       sessionLog.append("tool/call", {
         turn: context.turnCount,
@@ -931,13 +1019,16 @@ export class AgentLoop {
         decision: "approve" as const,
       });
 
-      let result: { success: boolean; data?: unknown; error?: string };
+      let result: { success: boolean; data?: unknown; error?: string } = {
+        success: false,
+        error: "definitely_not_applied: execution not dispatched",
+      };
       let duration = 0;
 
       if (preExecute.decision === "deny") {
         result = {
           success: false,
-          error: preExecute.denyReason ?? "Tool execution denied by plugin",
+          error: `definitely_not_applied: ${preExecute.denyReason ?? "Tool execution denied by plugin before dispatch"}`,
         };
       } else {
         // 3-stage execution pipeline: prepare → dispatch → finalize
@@ -953,24 +1044,40 @@ export class AgentLoop {
         if (!prepResult.ok) {
           result = {
             success: false,
-            error: prepResult.result.error,
+            error: `definitely_not_applied: pre-dispatch validation rejected tool input: ${prepResult.result.error}`,
           };
         } else {
-          // Dispatch with timeout control
-          const dispatchResult = await context.toolRegistry.dispatch(
-            prepResult.prepared
-          );
+          // Dispatch with timeout control. The registry normally normalizes
+          // dispatch failures, but a custom/alternate registry may throw.
+          // A throw after prepare cannot prove no effect, so classify it as
+          // dispatch_error and let I7 invalidate current.
+          let dispatchResult;
+          try {
+            dispatchResult = await context.toolRegistry.dispatch(
+              prepResult.prepared
+            );
+          } catch (error) {
+            result = {
+              success: false,
+              error: `dispatch_error: ${error instanceof Error ? error.message : String(error)}`,
+            };
+            duration = 0;
+            logger.toolResult(toolCall.name, false, duration);
+            dispatchResult = null;
+          }
 
-          // Finalize — truncate large payloads
-          const finalized = context.toolRegistry.finalize(dispatchResult);
+          if (dispatchResult) {
+            // Finalize — truncate large payloads
+            const finalized = context.toolRegistry.finalize(dispatchResult);
 
-          result = {
-            success: finalized.success,
-            data: finalized.data,
-            error: finalized.error,
-          };
-          duration = finalized.duration;
-          logger.toolResult(toolCall.name, finalized.success, duration);
+            result = {
+              success: finalized.success,
+              data: finalized.data,
+              error: finalized.error,
+            };
+            duration = finalized.duration;
+            logger.toolResult(toolCall.name, finalized.success, duration);
+          }
         }
 
         // Post-execute waterfall — plugins can modify result
@@ -1049,6 +1156,19 @@ export class AgentLoop {
         error: result.error,
       });
 
+      // ── P2-E I7-B-R1 Integration Point 3: Post-execution invalidation ──
+      // CRITICAL: After tool execution, classify effect and invalidate current if needed.
+      // Only definitely_not_applied preserves current for state-changing tools.
+      // Unknown/error/timeout/transport-lost results fail closed and invalidate.
+      // Only active for P2E sessions.
+      if (isP2EActive(context.workflow)) {
+        context.workflow = handlePostToolExecution(context.workflow, toolCall, {
+          success: result.success,
+          error: result.error,
+        });
+        logger.debug(`[P2E-INVALIDATE] tool=${toolCall.name} currentState=${context.workflow.currentObservation.kind}`);
+      }
+
       // ── Workflow: Update context based on tool execution ──
       context.workflow = updateWorkflowContext(
         context.workflow,
@@ -1058,6 +1178,30 @@ export class AgentLoop {
         result.data as Record<string, unknown> | undefined,
         context.workflowState
       );
+
+      // ── P2-E I7-B-R1 Integration Point 4: Authoritative snapshot ingestion ──
+      // CRITICAL: Only authoritative observation sources install current.
+      // browser_snapshot uses I4 atomic ingestion path. Incidental snapshot-like
+      // text from other tools does NOT overwrite currentObservation.
+      // Only active for P2E sessions.
+      if (isP2EActive(context.workflow) && toolCall.name === 'browser_snapshot' && result.success) {
+        const snapshotText = (result.data as { text?: string } | undefined)?.text;
+        if (snapshotText !== undefined) {
+          const outcome = snapshotText.length === 0 ? 'empty' : 'complete';
+          context.workflow = installAuthoritativeObservation(
+            context.workflow,
+            toolCall.name,
+            snapshotText,
+            context.workflow.currentPageUrl || context.target.url,
+            outcome,
+          );
+          logger.debug(`[P2E-INSTALL] currentState=${context.workflow.currentObservation.kind} occurrence=${
+            context.workflow.currentObservation.kind === 'current'
+              ? context.workflow.currentObservation.occurrence.occurrenceId.occurrenceId
+              : 'none'
+          }`);
+        }
+      }
 
       // ── LoginGuard: Update login state from evidence ──
       // Requirement detection: from initial page observation (navigate or snapshot)
@@ -1282,9 +1426,14 @@ export class AgentLoop {
 
               const currentId = context.workflow.currentSnapshotIdentity;
               const currentIdStr = currentId ? `v${currentId.version}:${currentId.hash}` : '—';
-              const decidedIdStr = decisionSnapshotIdentity
-                ? `v${decisionSnapshotIdentity.version}:${decisionSnapshotIdentity.hash}`
-                : '—';
+              const decisionProvenance = context.workflow.decisionProvenance;
+              const decidedIdStr = isP2EActive(context.workflow)
+                ? decisionProvenance && decisionProvenance !== 'LEGACY_UNAVAILABLE'
+                  ? `${decisionProvenance.occurrenceId}:${decisionProvenance.observationContent.contentHash}`
+                  : '—'
+                : context.workflow.decisionSnapshotIdentity
+                  ? `v${context.workflow.decisionSnapshotIdentity.version}:${context.workflow.decisionSnapshotIdentity.hash}`
+                  : '—';
               logger.info(`[ALIGN] current=${currentIdStr} decided=${decidedIdStr} target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
 
               // Per-turn, only for unmatched: at debug, dump the few candidate
@@ -1415,6 +1564,15 @@ export class AgentLoop {
                 snapshotData,
                 context.workflowState,
               );
+              if (isP2EActive(context.workflow)) {
+                context.workflow = installAuthoritativeObservation(
+                  context.workflow,
+                  'browser_snapshot',
+                  snapshotText,
+                  context.workflow.currentPageUrl || context.target.url,
+                  snapshotText.length === 0 ? 'empty' : 'complete',
+                );
+              }
               snapshotText = context.workflow.lastRawSnapshot;
             }
           }
