@@ -12,6 +12,60 @@
  */
 import type { Message, ToolCall } from "@test-harness/th-protocol";
 
+// ── Typed Visibility Contract ──
+
+export type ModelVisibility = 'conversation' | 'context' | 'none';
+export type ContextLifetime = 'next_turn' | 'until_superseded' | 'session_persistent';
+
+export type SessionSemanticKind =
+  | 'user_message'
+  | 'assistant_message'
+  | 'tool_result'
+  | 'coverage_continuation'
+  | 'recovery_guidance'
+  | 'tool_failure_strategy'
+  | 'workflow_guidance'
+  | 'cognition_guidance'
+  | 'audit_diagnostic'
+  | 'execution_trace'
+  | 'request_config'
+  | 'workflow_transition'
+  | 'unknown_custom';
+
+export interface SessionVisibilityMetadata {
+  readonly semanticKind: SessionSemanticKind;
+  readonly modelVisibility: ModelVisibility;
+  readonly contextLifetime?: ContextLifetime;
+  readonly supersessionKey?: string;
+  /** Logical model turn/generation for next_turn context. */
+  readonly targetLogicalTurnId?: string;
+  /** Model-safe projection; never fall back to audit payload. */
+  readonly modelProjection?: Message;
+}
+
+const MODEL_CONTEXT_KINDS = new Set<SessionSemanticKind>([
+  'coverage_continuation',
+  'recovery_guidance',
+  'tool_failure_strategy',
+  'workflow_guidance',
+  'cognition_guidance',
+]);
+
+export interface ContextAppendOptions {
+  readonly semanticKind: Exclude<SessionSemanticKind, 'user_message' | 'assistant_message' | 'tool_result'>;
+  readonly modelProjection?: Message;
+  readonly contextLifetime: ContextLifetime;
+  readonly supersessionKey?: string;
+  readonly targetLogicalTurnId?: string;
+}
+
+/** Normalized typed entry consumed by the pure derivation projection. */
+export interface SessionEntry {
+  readonly event: SessionEvent;
+  readonly visibility: SessionVisibilityMetadata;
+}
+
+
 // ── Session Event Types ──
 
 export type SessionEventType =
@@ -181,6 +235,31 @@ export class SessionLog {
     return event;
   }
 
+  /**
+   * Append an explicitly classified model-context entry.
+   * SessionLog owns append sequence allocation; producers cannot provide it.
+   */
+  appendContext(
+    data: { content: unknown },
+    options: ContextAppendOptions,
+  ): SessionEvent {
+    const event = this.append('custom', {
+      type: options.semanticKind,
+      data: {
+        auditPayload: data.content,
+        visibility: {
+          semanticKind: options.semanticKind,
+          modelVisibility: 'context',
+          contextLifetime: options.contextLifetime,
+          supersessionKey: options.supersessionKey,
+          targetLogicalTurnId: options.targetLogicalTurnId,
+          modelProjection: options.modelProjection,
+        } satisfies SessionVisibilityMetadata,
+      },
+    });
+    return event;
+  }
+
   /** Get all events */
   getEvents(): ReadonlyArray<SessionEvent> {
     return this.events;
@@ -206,65 +285,155 @@ export class SessionLog {
   }
 
   /**
-   * Derive the model message history from the session log.
+   * Append a validated model-context entry.
    *
-   * This is the key function — it reconstructs the conversation
-   * history that should be sent to the LLM by replaying the log.
-   * Only model-visible events are included.
+   * Producer boundary contract: invalid context metadata is rejected rather
+   * than silently converted into an unscoped or globally visible entry.
    */
-  deriveMessages(systemPrompt?: string): Message[] {
-    const messages: Message[] = [];
-
-    // Add system prompt if provided
-    if (systemPrompt) {
-      messages.push({
-        role: "system",
-        content: systemPrompt,
-      });
+  appendModelContext(
+    auditPayload: unknown,
+    options: ContextAppendOptions,
+  ): SessionEvent {
+    if (!MODEL_CONTEXT_KINDS.has(options.semanticKind)) {
+      throw new Error(`Semantic kind '${options.semanticKind}' is not an approved MODEL_CONTEXT kind`);
+    }
+    if (!options.modelProjection) {
+      throw new Error(`Model context '${options.semanticKind}' requires modelProjection`);
+    }
+    if (options.contextLifetime === 'next_turn' && !options.targetLogicalTurnId) {
+      throw new Error(`Model context '${options.semanticKind}' requires targetLogicalTurnId`);
+    }
+    if ((options.contextLifetime === 'until_superseded' || options.contextLifetime === 'session_persistent') && !options.supersessionKey) {
+      throw new Error(`Model context '${options.semanticKind}' requires supersessionKey`);
     }
 
-    for (const event of this.events) {
+    return this.appendContext({ content: auditPayload }, options);
+  }
+
+  /**
+   * Normalize a legacy event at the ingestion boundary.
+   *
+   * Only the approved legacy conversation/protocol event types receive
+   * compatibility metadata. Legacy system/custom events remain invisible.
+   */
+  normalizeEntry(event: SessionEvent): SessionEntry {
+    let visibility: SessionVisibilityMetadata;
+    switch (event.type) {
+      case 'user/message':
+        visibility = { semanticKind: 'user_message', modelVisibility: 'conversation' };
+        break;
+      case 'assistant/message':
+        visibility = { semanticKind: 'assistant_message', modelVisibility: 'conversation' };
+        break;
+      case 'tool/result':
+        visibility = { semanticKind: 'tool_result', modelVisibility: 'conversation' };
+        break;
+      case 'custom': {
+        const data = event.data as { data?: { visibility?: SessionVisibilityMetadata }; visibility?: SessionVisibilityMetadata };
+        const explicit = data.data?.visibility ?? data.visibility;
+        if (explicit && this.isValidVisibilityMetadata(explicit)) {
+          visibility = explicit;
+        } else {
+          visibility = { semanticKind: 'unknown_custom', modelVisibility: 'none' };
+        }
+        break;
+      }
+      default:
+        visibility = { semanticKind: 'unknown_custom', modelVisibility: 'none' };
+    }
+    return { event, visibility };
+  }
+
+  private isValidVisibilityMetadata(metadata: SessionVisibilityMetadata): boolean {
+    if (!['conversation', 'context', 'none'].includes(metadata.modelVisibility)) return false;
+    // unknown_custom is an explicit fail-closed kind and can never self-promote
+    // into conversation or context visibility.
+    if (metadata.semanticKind === 'unknown_custom' && metadata.modelVisibility !== 'none') return false;
+    if (metadata.modelVisibility === 'context') {
+      if (!metadata.contextLifetime) return false;
+      if (metadata.contextLifetime === 'next_turn' && !metadata.targetLogicalTurnId) return false;
+      if ((metadata.contextLifetime === 'until_superseded' || metadata.contextLifetime === 'session_persistent') && !metadata.supersessionKey) return false;
+      if (!metadata.modelProjection) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Derive model messages from the explicit visibility contract.
+   *
+   * `logicalTurnId` is used only for typed context entries. This function is
+   * pure/read-only: it never consumes context or mutates the append-only log.
+   */
+  deriveMessages(systemPrompt?: string, logicalTurnId?: string): Message[] {
+    const messages: Message[] = [];
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+
+    const entries = this.events.map(event => this.normalizeEntry(event));
+    const contextEntries = entries
+      .filter(entry => entry.visibility.modelVisibility === 'context')
+      .filter(entry => this.isContextActive(entry, logicalTurnId))
+      .filter(entry => entry.visibility.modelProjection !== undefined)
+      .filter((entry, index, all) => {
+        const key = entry.visibility.supersessionKey;
+        if (!key || entry.visibility.contextLifetime === 'next_turn') return true;
+        return !all.some(other =>
+          other.visibility.supersessionKey === key &&
+          other.visibility.contextLifetime !== 'next_turn' &&
+          other.event.seq > entry.event.seq
+        );
+      })
+      .sort((a, b) => a.event.seq - b.event.seq);
+
+    for (const entry of entries) {
+      const { event, visibility } = entry;
+      if (visibility.modelVisibility === 'none' || visibility.modelVisibility === 'context') continue;
       switch (event.type) {
         case "user/message": {
           const data = event.data as UserMessageEvent;
-          messages.push({
-            role: "user",
-            content: data.content,
-            images: data.images,
-          });
+          messages.push({ role: "user", content: data.content, images: data.images });
           break;
         }
-
         case "assistant/message": {
           const data = event.data as AssistantMessageEvent;
           messages.push({
-            role: "assistant",
-            content: data.content,
-            toolCalls: data.toolCalls?.map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: tc.arguments,
-            })),
+            role: "assistant", content: data.content,
+            toolCalls: data.toolCalls?.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
           });
           break;
         }
-
         case "tool/result": {
           const data = event.data as ToolResultEvent;
           messages.push({
             role: "tool",
-            content: data.success
-              ? JSON.stringify(data.data, null, 2)
-              : `Error: ${data.error}`,
-            toolCallId: data.callId,
-            name: data.name,
+            content: data.success ? JSON.stringify(data.data, null, 2) : `Error: ${data.error}`,
+            toolCallId: data.callId, name: data.name,
           });
           break;
         }
       }
     }
 
+    // Context follows chronological conversation/protocol history and is sorted
+    // by SessionLog sequence. Only explicit modelProjection is serialized.
+    for (const entry of contextEntries) {
+      messages.push(entry.visibility.modelProjection!);
+    }
     return messages;
+  }
+
+  private isContextActive(entry: SessionEntry, logicalTurnId?: string): boolean {
+    const visibility = entry.visibility;
+    if (visibility.contextLifetime === 'next_turn') {
+      return visibility.targetLogicalTurnId !== undefined && visibility.targetLogicalTurnId === logicalTurnId;
+    }
+    if (visibility.contextLifetime === 'until_superseded' || visibility.contextLifetime === 'session_persistent') {
+      // Supersession is handled by selecting the latest sequence per key.
+      // Entries without a key fail closed.
+      return visibility.supersessionKey !== undefined;
+    }
+    return false;
   }
 
   /**

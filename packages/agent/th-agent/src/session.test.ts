@@ -107,8 +107,296 @@ describe("SessionLog", () => {
     expect(messages[0]!.content).toBe("Error: Network error");
   });
 
-  // ── getEventsByType ──
+  // ── P3 typed visibility contract ──
 
+  it("V1: audit-only custom entries never appear in derived model messages", () => {
+    const log = new SessionLog();
+    log.append('custom', {
+      type: 'audit_diagnostic',
+      data: { visibility: { semanticKind: 'audit_diagnostic', modelVisibility: 'none' }, detail: 'secret trace' },
+    });
+
+    expect(log.deriveMessages()).toEqual([]);
+  });
+
+  it("V2/V6: next_turn context is bound to logical turn and retries are read-only", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'audit payload must not leak' },
+      {
+        semanticKind: 'coverage_continuation',
+        contextLifetime: 'next_turn',
+        targetLogicalTurnId: 'T17',
+        modelProjection: { role: 'system', content: 'Continue checkout coverage' },
+      },
+    );
+
+    const before = log.toJSON();
+    const first = log.deriveMessages(undefined, 'T17');
+    const retry = log.deriveMessages(undefined, 'T17');
+    const later = log.deriveMessages(undefined, 'T18');
+
+    expect(first).toEqual([{ role: 'system', content: 'Continue checkout coverage' }]);
+    expect(retry).toEqual(first);
+    expect(later).toEqual([]);
+    expect(log.toJSON()).toEqual(before);
+  });
+
+  it("V2/V6: next_turn context is bound to logical turn and retries are read-only", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'audit payload must not leak' },
+      {
+        semanticKind: 'coverage_continuation',
+        contextLifetime: 'next_turn',
+        targetLogicalTurnId: 'T17',
+        modelProjection: { role: 'system', content: 'Continue checkout coverage' },
+      },
+    );
+
+    const before = log.toJSON();
+    const first = log.deriveMessages(undefined, 'T17');
+    const retry = log.deriveMessages(undefined, 'T17');
+    const later = log.deriveMessages(undefined, 'T18');
+
+    expect(first).toEqual([{ role: 'system', content: 'Continue checkout coverage' }]);
+    expect(retry).toEqual(first);
+    expect(later).toEqual([]);
+    expect(log.toJSON()).toEqual(before);
+  });
+
+  it("A1: next_turn context without logicalTurnId fails closed", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'audit payload must not leak' },
+      {
+        semanticKind: 'coverage_continuation',
+        contextLifetime: 'next_turn',
+        targetLogicalTurnId: 'T17',
+        modelProjection: { role: 'system', content: 'Must not appear without turn' },
+      },
+    );
+
+    expect(log.deriveMessages()).toEqual([]);
+  });
+
+  it("A2: non-next-turn context does not require logicalTurnId", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'audit payload' },
+      {
+        semanticKind: 'tool_failure_strategy',
+        contextLifetime: 'until_superseded',
+        supersessionKey: 'strategy:search',
+        modelProjection: { role: 'system', content: 'Use keyboard navigation' },
+      },
+    );
+
+    expect(log.deriveMessages()).toEqual([
+      { role: 'system', content: 'Use keyboard navigation' },
+    ]);
+  });
+
+  it("V3: unknown_custom cannot self-promote to model context", () => {
+    const log = new SessionLog();
+    log.append('custom', {
+      type: 'future_kind',
+      data: {
+        visibility: {
+          semanticKind: 'unknown_custom',
+          modelVisibility: 'context',
+          contextLifetime: 'next_turn',
+          targetLogicalTurnId: 'T1',
+          modelProjection: { role: 'system', content: 'Must remain invisible' },
+        },
+      },
+    });
+
+    expect(log.deriveMessages(undefined, 'T1')).toEqual([]);
+  });
+
+  it("V5: same role does not determine visibility", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'coverage audit' },
+      {
+        semanticKind: 'coverage_continuation',
+        contextLifetime: 'next_turn',
+        targetLogicalTurnId: 'T1',
+        modelProjection: { role: 'system', content: 'Visible guidance' },
+      },
+    );
+    log.append('custom', {
+      type: 'audit_diagnostic',
+      data: { visibility: { semanticKind: 'audit_diagnostic', modelVisibility: 'none', modelProjection: { role: 'system', content: 'Invisible diagnostic' } } },
+    });
+
+    expect(log.deriveMessages(undefined, 'T1')).toEqual([
+      { role: 'system', content: 'Visible guidance' },
+    ]);
+  });
+
+  it("V7: same supersessionKey uses greatest append sequence; different keys coexist", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'old' },
+      { semanticKind: 'tool_failure_strategy', contextLifetime: 'until_superseded', supersessionKey: 'strategy:search', modelProjection: { role: 'system', content: 'Old strategy' } },
+    );
+    log.appendContext(
+      { content: 'other' },
+      { semanticKind: 'tool_failure_strategy', contextLifetime: 'until_superseded', supersessionKey: 'strategy:checkout', modelProjection: { role: 'system', content: 'Other strategy' } },
+    );
+    log.appendContext(
+      { content: 'new' },
+      { semanticKind: 'tool_failure_strategy', contextLifetime: 'until_superseded', supersessionKey: 'strategy:search', modelProjection: { role: 'system', content: 'New strategy' } },
+    );
+
+    expect(log.deriveMessages()).toEqual([
+      { role: 'system', content: 'Other strategy' },
+      { role: 'system', content: 'New strategy' },
+    ]);
+  });
+
+  it("V8: context missing modelProjection fails closed without audit leakage", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'raw headers=secret-cookie' },
+      { semanticKind: 'recovery_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T1' },
+    );
+
+    expect(log.deriveMessages(undefined, 'T1')).toEqual([]);
+    expect(log.toJSON()).toHaveLength(1);
+  });
+
+  it("V9: active contexts use append sequence ascending order", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'first' },
+      { semanticKind: 'coverage_continuation', contextLifetime: 'next_turn', targetLogicalTurnId: 'T1', modelProjection: { role: 'system', content: 'First' } },
+    );
+    log.appendContext(
+      { content: 'second' },
+      { semanticKind: 'recovery_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T1', modelProjection: { role: 'system', content: 'Second' } },
+    );
+
+    expect(log.deriveMessages(undefined, 'T1')).toEqual([
+      { role: 'system', content: 'First' },
+      { role: 'system', content: 'Second' },
+    ]);
+  });
+
+  it("V10: repeated derivation does not mutate SessionLog", () => {
+    const log = new SessionLog();
+    log.appendContext(
+      { content: 'audit' },
+      { semanticKind: 'recovery_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T1', modelProjection: { role: 'system', content: 'Retry safely' } },
+    );
+    const before = log.toJSON();
+    const a = log.deriveMessages(undefined, 'T1');
+    const b = log.deriveMessages(undefined, 'T1');
+    expect(a).toEqual(b);
+    expect(log.toJSON()).toEqual(before);
+  });
+
+  it("V11: legacy system/note remains invisible while legacy conversation stays visible", () => {
+    const log = new SessionLog();
+    log.append('system/note', { note: 'legacy internal note' });
+    log.append('user/message', { turn: 1, content: 'legacy user task' });
+    expect(log.deriveMessages()).toEqual([{ role: 'user', content: 'legacy user task' }]);
+  });
+
+  it("V12: legacy user/assistant/tool-result normalization preserves behavior", () => {
+    const log = new SessionLog();
+    log.append('user/message', { turn: 1, content: 'hello' });
+    log.append('assistant/message', { turn: 1, step: 1, content: 'hi' });
+    log.append('tool/result', { turn: 1, step: 1, callId: 'c1', name: 'tool', success: true, data: { ok: true }, duration: 1 });
+    expect(log.deriveMessages()).toEqual([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi', toolCalls: undefined },
+      { role: 'tool', content: JSON.stringify({ ok: true }, null, 2), toolCallId: 'c1', name: 'tool' },
+    ]);
+  });
+
+
+  it("C1/C2: coverage and recovery guidance use explicit context metadata", () => {
+    const log = new SessionLog();
+    log.appendModelContext(
+      { internalTarget: 'checkout', audit: { confidence: 0.4 } },
+      { semanticKind: 'coverage_continuation', contextLifetime: 'next_turn', targetLogicalTurnId: 'T2', modelProjection: { role: 'system', content: 'Continue checkout' } },
+    );
+    log.appendModelContext(
+      { internalRecovery: { stack: 'hidden' } },
+      { semanticKind: 'recovery_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T2', modelProjection: { role: 'system', content: 'Retry safely' } },
+    );
+
+    expect(log.deriveMessages(undefined, 'T2')).toEqual([
+      { role: 'system', content: 'Continue checkout' },
+      { role: 'system', content: 'Retry safely' },
+    ]);
+  });
+
+  it("C3/C4/C7: tool-failure and cognition guidance expose only safe projection", () => {
+    const log = new SessionLog();
+    log.appendModelContext(
+      { exception: 'secret stack', retryCount: 3, internalId: 'x', guidance: 'Use keyboard' },
+      { semanticKind: 'tool_failure_strategy', contextLifetime: 'next_turn', targetLogicalTurnId: 'T3', modelProjection: { role: 'system', content: 'Use keyboard' } },
+    );
+    log.appendModelContext(
+      { rawHistory: ['private episode'], guidance: 'Try search' },
+      { semanticKind: 'cognition_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T3', modelProjection: { role: 'system', content: 'Try search' } },
+    );
+
+    const messages = log.deriveMessages(undefined, 'T3');
+    expect(messages).toEqual([
+      { role: 'system', content: 'Use keyboard' },
+      { role: 'system', content: 'Try search' },
+    ]);
+    expect(JSON.stringify(messages)).not.toContain('secret stack');
+    expect(JSON.stringify(messages)).not.toContain('private episode');
+  });
+
+  it("C5/C6: workflow transition and diagnostics remain invisible", () => {
+    const log = new SessionLog();
+    log.append('system/note', { note: '[Workflow] TEST → REPORT' });
+    log.append('custom', { type: 'align', data: { visibility: { semanticKind: 'audit_diagnostic', modelVisibility: 'none' }, reason: 'stale' } });
+    log.append('custom', { type: 'request/config', data: { visibility: { semanticKind: 'request_config', modelVisibility: 'none' }, model: 'secret-model' } });
+
+    expect(log.deriveMessages(undefined, 'T4')).toEqual([]);
+  });
+
+  it("C8: malformed context metadata is rejected at producer boundary", () => {
+    const log = new SessionLog();
+    expect(() => log.appendModelContext(
+      { audit: 'x' },
+      { semanticKind: 'coverage_continuation', contextLifetime: 'next_turn', targetLogicalTurnId: 'T1' },
+    )).toThrow('requires modelProjection');
+    expect(() => log.appendModelContext(
+      { audit: 'x' },
+      { semanticKind: 'coverage_continuation', contextLifetime: 'next_turn', modelProjection: { role: 'system', content: 'bad' } },
+    )).toThrow('requires targetLogicalTurnId');
+    expect(() => log.appendModelContext(
+      { audit: 'x' },
+      { semanticKind: 'workflow_transition' as any, contextLifetime: 'next_turn', targetLogicalTurnId: 'T1', modelProjection: { role: 'system', content: 'bad' } },
+    )).toThrow('not an approved MODEL_CONTEXT kind');
+  });
+
+  it("C9/C10: ALIGN/request-config/execution-trace remain audit-only", () => {
+    const log = new SessionLog();
+    for (const type of ['align', 'request/config', 'execution/trace']) {
+      log.append('custom', { type, data: { detail: 'internal' } });
+    }
+    expect(log.deriveMessages(undefined, 'T5')).toEqual([]);
+  });
+
+  it("C11: multiple migrated producers follow append sequence", () => {
+    const log = new SessionLog();
+    log.appendModelContext({ audit: 1 }, { semanticKind: 'coverage_continuation', contextLifetime: 'next_turn', targetLogicalTurnId: 'T6', modelProjection: { role: 'system', content: 'A' } });
+    log.appendModelContext({ audit: 2 }, { semanticKind: 'recovery_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T6', modelProjection: { role: 'system', content: 'B' } });
+    log.appendModelContext({ audit: 3 }, { semanticKind: 'cognition_guidance', contextLifetime: 'next_turn', targetLogicalTurnId: 'T6', modelProjection: { role: 'system', content: 'C' } });
+    expect(log.deriveMessages(undefined, 'T6').map(message => message.content)).toEqual(['A', 'B', 'C']);
+  });
+
+  // ── getEventsByType ──
   it("getEventsByType filters correctly", () => {
     const log = new SessionLog();
     log.append("turn/start", { turn: 1 } as TurnStartEvent);

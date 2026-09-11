@@ -79,6 +79,41 @@ export const AgentStreamChunkEvent = defineEvent<AgentStreamChunkEventData>(
   { durable: false }
 );
 
+// ── P4 Streaming Contract v1 ──
+
+export const STREAM_CONTRACT_VERSION = 1 as const;
+export type StreamContractVersion = typeof STREAM_CONTRACT_VERSION;
+export type StreamGenerationStatus = 'streaming' | 'completed' | 'errored' | 'cancelled';
+export type StreamPayloadMode = 'accumulated';
+
+/**
+ * Complete P4 v1 stream envelope. Identity/order fields are producer-owned by
+ * AgentLoop; worker, WebSocket, and Dashboard only transport/consume them.
+ */
+export interface StreamEnvelope {
+  readonly streamContractVersion: StreamContractVersion;
+  readonly sessionId: string;
+  readonly logicalTurn: string;
+  readonly generationId: string;
+  readonly generationOrdinal: number;
+  readonly seq: number;
+  readonly payloadMode: StreamPayloadMode;
+  readonly content: string;
+  readonly status: StreamGenerationStatus;
+}
+
+/** Generation-bound final assistant commit. */
+export interface FinalAssistantCommit {
+  readonly streamContractVersion: StreamContractVersion;
+  readonly sessionId: string;
+  readonly logicalTurn: string;
+  readonly generationId: string;
+  readonly generationOrdinal: number;
+  /** References the producer-owned terminal stream sequence. */
+  readonly finalSeq: number;
+  readonly content: string;
+}
+
 // ── Waterfall Events (around-middleware, used by Agent Loop) ──
 
 /**

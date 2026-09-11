@@ -235,7 +235,66 @@ export function installAuthoritativeObservation(
   };
 }
 
-// ─── Diagnostic Helpers ──────────────────────────────────────────────────────
+// ─── Authoritative Snapshot Single-Source Fan-Out (I9-A-R1) ──────────────────
+
+/**
+ * Process one authoritative browser_snapshot event through explicit consumer
+ * projections. The event is acquired once; LEGACY compatibility projection and
+ * P2E I4 occurrence ingestion are independent consumers of that same event.
+ *
+ * This coordinator deliberately keeps legacy fields for LEGACY compatibility,
+ * but no longer relies on "legacy update first, then P2E update" as an implicit
+ * ownership/order contract.
+ */
+export function processAuthoritativeSnapshot(
+  workflow: WorkflowContext,
+  toolName: string,
+  rawSnapshot: string,
+  url: string,
+  outcome: AcquisitionOutcome,
+  legacyProjection: (
+    current: WorkflowContext,
+    snapshot: Record<string, unknown>,
+  ) => WorkflowContext,
+): WorkflowContext {
+  if (!isAuthoritativeObservationSource(toolName)) {
+    return workflow;
+  }
+
+  const snapshot = { text: rawSnapshot };
+  // Stage P2E first from the source event itself. No caller-visible state is
+  // committed yet. An accepted partial without explicit scope is rejected by
+  // I4 and therefore aborts the fan-out before the LEGACY branch can run.
+  if (outcome === 'accepted_partial') {
+    return workflow;
+  }
+
+  try {
+    const stagedP2E = isP2EActive(workflow)
+      ? installAuthoritativeObservation(workflow, toolName, rawSnapshot, url, outcome)
+      : workflow;
+
+    // Consumer 1: legacy compatibility projection is independently staged from
+    // the same raw event, not from P2E or legacy-mutated state.
+    const stagedLegacy = legacyProjection({ ...workflow }, snapshot);
+
+    // Single commit: combine the two copy-on-write staged results only after
+    // both branches have completed. P2E fields are taken from stagedP2E;
+    // legacy fields are taken from stagedLegacy.
+    return {
+      ...stagedLegacy,
+      currentObservation: stagedP2E.currentObservation,
+      occurrenceCounter: stagedP2E.occurrenceCounter,
+    };
+  } catch {
+    // Single-commit contract: if either stage fails, expose the original
+    // workflow unchanged. The error is intentionally left for the caller's
+    // existing result/error path to report.
+    return workflow;
+  }
+}
+
+
 
 /**
  * Check if P2E integration is active for this workflow

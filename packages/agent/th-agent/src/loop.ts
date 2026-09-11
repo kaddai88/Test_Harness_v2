@@ -77,6 +77,7 @@ import {
   handlePostToolExecution,
   installAuthoritativeObservation,
   isP2EActive,
+  processAuthoritativeSnapshot,
 } from "./agentloop-integration.js";
 import { appendP2EObservationToRequest } from "./request-observation.js";
 
@@ -771,7 +772,10 @@ export class AgentLoop {
 
     // ── Step 1: Pre-step waterfall ──
     // Derive messages from session log
-    const messages = sessionLog.deriveMessages(finalSystemPrompt);
+    const messages = sessionLog.deriveMessages(
+      finalSystemPrompt,
+      `T${context.turnCount}`,
+    );
 
     // Fire pre-step waterfall — plugins can modify or reject
     const preStepResult = await eventBus.waterfall(AgentPreStepEvent, {
@@ -943,7 +947,15 @@ export class AgentLoop {
           const guidance = topGap
             ? `Continue testing. Next target: test "${topGap.featureKey}" (${topGap.scenarioType}) [priority: ${topGap.priority.level}]. Do NOT stop until all coverage targets are met.`
             : `Continue testing. There are still uncovered targets. Do NOT stop until all coverage targets are met.`;
-          sessionLog.append('system/note', { note: guidance });
+          sessionLog.appendModelContext(
+            { note: guidance },
+            {
+              semanticKind: 'coverage_continuation',
+              contextLifetime: 'next_turn',
+              targetLogicalTurnId: `T${context.turnCount + 1}`,
+              modelProjection: { role: 'system', content: guidance },
+            },
+          );
           return { complete: false, response: { content: response.content }, toolResults: [] };
         }
       }
@@ -1215,9 +1227,16 @@ export class AgentLoop {
 
         // If tool hit max retries, inject system message to force strategy change
         if (count >= context.maxRetriesPerAction) {
-          sessionLog.append("system/note", {
-            note: `⚠️ Tool "${currentTool}" has failed ${count} consecutive times. You MUST try a different approach — use a different tool, different selector, or different strategy. Do NOT repeat the same failing action.`,
-          });
+          const strategyGuidance = `⚠️ Tool "${currentTool}" has failed ${count} consecutive times. You MUST try a different approach — use a different tool, different selector, or different strategy. Do NOT repeat the same failing action.`;
+          sessionLog.appendModelContext(
+            { note: strategyGuidance },
+            {
+              semanticKind: 'tool_failure_strategy',
+              contextLifetime: 'next_turn',
+              targetLogicalTurnId: `T${context.turnCount + 1}`,
+              modelProjection: { role: 'system', content: strategyGuidance },
+            },
+          );
           logger.warn(`${currentTool} failed ${count}x — forcing strategy change`);
         }
       }
@@ -1243,38 +1262,47 @@ export class AgentLoop {
         logger.debug(`[P2E-INVALIDATE] tool=${toolCall.name} currentState=${context.workflow.currentObservation.kind}`);
       }
 
-      // ── Workflow: Update context based on tool execution ──
-      context.workflow = updateWorkflowContext(
-        context.workflow,
-        toolCall.name,
-        toolCall.arguments as Record<string, unknown>,
-        result.success,
-        result.data as Record<string, unknown> | undefined,
-        context.workflowState
-      );
-
-      // ── P2-E I7-B-R1 Integration Point 4: Authoritative snapshot ingestion ──
-      // CRITICAL: Only authoritative observation sources install current.
-      // browser_snapshot uses I4 atomic ingestion path. Incidental snapshot-like
-      // text from other tools does NOT overwrite currentObservation.
-      // Only active for P2E sessions.
-      if (isP2EActive(context.workflow) && toolCall.name === 'browser_snapshot' && result.success) {
+      // ── I9-A-R1: Single-source authoritative snapshot fan-out ──
+      // A browser_snapshot event has one acquisition owner. LEGACY and P2E
+      // projections consume that event through one explicit coordinator.
+      if (toolCall.name === 'browser_snapshot' && result.success) {
         const snapshotText = (result.data as { text?: string } | undefined)?.text;
         if (snapshotText !== undefined) {
-          const outcome = snapshotText.length === 0 ? 'empty' : 'complete';
-          context.workflow = installAuthoritativeObservation(
+          context.workflow = processAuthoritativeSnapshot(
             context.workflow,
             toolCall.name,
             snapshotText,
             context.workflow.currentPageUrl || context.target.url,
-            outcome,
+            snapshotText.length === 0 ? 'empty' : 'complete',
+            (current, snapshot) => updateWorkflowContext(
+              current,
+              toolCall.name,
+              toolCall.arguments as Record<string, unknown>,
+              result.success,
+              { ...(result.data as Record<string, unknown>), ...snapshot },
+              context.workflowState,
+            ),
           );
-          logger.debug(`[P2E-INSTALL] currentState=${context.workflow.currentObservation.kind} occurrence=${
-            context.workflow.currentObservation.kind === 'current'
-              ? context.workflow.currentObservation.occurrence.occurrenceId.occurrenceId
-              : 'none'
-          }`);
+        } else {
+          context.workflow = updateWorkflowContext(
+            context.workflow,
+            toolCall.name,
+            toolCall.arguments as Record<string, unknown>,
+            result.success,
+            result.data as Record<string, unknown> | undefined,
+            context.workflowState,
+          );
         }
+      } else {
+        // Non-snapshot tools retain their existing LEGACY workflow projection.
+        context.workflow = updateWorkflowContext(
+          context.workflow,
+          toolCall.name,
+          toolCall.arguments as Record<string, unknown>,
+          result.success,
+          result.data as Record<string, unknown> | undefined,
+          context.workflowState,
+        );
       }
 
       // ── LoginGuard: Update login state from evidence ──
@@ -1335,7 +1363,15 @@ export class AgentLoop {
             // Inject recovery guidance
             const guidance = getRecoveryGuidance(verification, context.workflow.verificationFailures);
             if (guidance) {
-              sessionLog.append("system/note", { note: guidance });
+              sessionLog.appendModelContext(
+                { note: guidance },
+                {
+                  semanticKind: 'recovery_guidance',
+                  contextLifetime: 'next_turn',
+                  targetLogicalTurnId: `T${context.turnCount + 1}`,
+                  modelProjection: { role: 'system', content: guidance },
+                },
+              );
               logger.warn(`[Verify] ${verification.outcome}: ${verification.details}`);
             }
           } else {
@@ -1359,16 +1395,28 @@ export class AgentLoop {
 
         // Inject recovery suggestions if available
         if (cogResult.recoverySuggestions && cogResult.recoverySuggestions.length > 0) {
-          sessionLog.append("system/note", {
-            note: `[Cognition] 恢复建议: ${cogResult.recoverySuggestions.join('; ')}`,
-          });
+          sessionLog.appendModelContext(
+            { note: `[Cognition] 恢复建议: ${cogResult.recoverySuggestions.join('; ')}` },
+            {
+              semanticKind: 'cognition_guidance',
+              contextLifetime: 'next_turn',
+              targetLogicalTurnId: `T${context.turnCount + 1}`,
+              modelProjection: { role: 'system', content: `[Cognition] 恢复建议: ${cogResult.recoverySuggestions.join('; ')}` },
+            },
+          );
         }
 
         // Inject strategy adjustment if available
         if (cogResult.strategyAdjustment) {
-          sessionLog.append("system/note", {
-            note: `[Cognition] 策略调整: ${cogResult.strategyAdjustment.adjustment}`,
-          });
+          sessionLog.appendModelContext(
+            { note: `[Cognition] 策略调整: ${cogResult.strategyAdjustment.adjustment}` },
+            {
+              semanticKind: 'cognition_guidance',
+              contextLifetime: 'next_turn',
+              targetLogicalTurnId: `T${context.turnCount + 1}`,
+              modelProjection: { role: 'system', content: `[Cognition] 策略调整: ${cogResult.strategyAdjustment.adjustment}` },
+            },
+          );
         }
       }
 
@@ -1501,14 +1549,28 @@ export class AgentLoop {
               const currentId = context.workflow.currentSnapshotIdentity;
               const currentIdStr = currentId ? `v${currentId.version}:${currentId.hash}` : '—';
               const decisionProvenance = context.workflow.decisionProvenance;
+              const p2eDiagnostic = isP2EActive(context.workflow)
+                ? (() => {
+                    const current = context.workflow.currentObservation;
+                    const decision = decisionProvenance;
+                    const decisionOccurrence = decision && decision !== 'LEGACY_UNAVAILABLE'
+                      ? decision.occurrenceId
+                      : 'LEGACY_UNAVAILABLE';
+                    const currentOccurrence = current.kind === 'current'
+                      ? current.occurrence.occurrenceId.occurrenceId
+                      : current.kind;
+                    const content = decision && decision !== 'LEGACY_UNAVAILABLE'
+                      ? ` decisionContent=${decision.observationContent.contractVersion}:${decision.observationContent.contentHash}`
+                      : '';
+                    return `decisionOccurrence=${decisionOccurrence} currentOccurrence=${currentOccurrence} currentStateKind=${current.kind}${content}`;
+                  })()
+                : '';
               const decidedIdStr = isP2EActive(context.workflow)
-                ? decisionProvenance && decisionProvenance !== 'LEGACY_UNAVAILABLE'
-                  ? `${decisionProvenance.occurrenceId}:${decisionProvenance.observationContent.contentHash}`
-                  : '—'
+                ? p2eDiagnostic
                 : context.workflow.decisionSnapshotIdentity
                   ? `v${context.workflow.decisionSnapshotIdentity.version}:${context.workflow.decisionSnapshotIdentity.hash}`
                   : '—';
-              logger.info(`[ALIGN] current=${currentIdStr} decided=${decidedIdStr} target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
+              logger.info(`[ALIGN] ${isP2EActive(context.workflow) ? decidedIdStr : `current=${currentIdStr} decided=${decidedIdStr}`} target=${target.featureKey}("${targetFeature?.name ?? '?'}",ref=${targetFeature?.ref ?? '-'}) action.ref=${targetRef || '-'} snapshot.refs=${snapshotRefs.length} target.ref-in-snap=${targetRefInSnapshot} action.ref-in-snap=${actionRefInSnapshot} verdict=${verdict}`);
 
               // Per-turn, only for unmatched: at debug, dump the few candidate
               // features on the target surface that share the action's element type.
@@ -1627,27 +1689,22 @@ export class AgentLoop {
             if (snapResult.success && snapResult.data) {
               const snapshotData = snapResult.data as Record<string, unknown>;
               snapshotText = String(snapshotData.text ?? '');
-              // Route the initial TEST snapshot through the same lifecycle
-              // updater as ordinary browser_snapshot results. This keeps
-              // refs, identity, page content, and target guards coherent.
-              context.workflow = updateWorkflowContext(
+              context.workflow = processAuthoritativeSnapshot(
                 context.workflow,
                 'browser_snapshot',
-                {},
-                true,
-                snapshotData,
-                context.workflowState,
-              );
-              if (isP2EActive(context.workflow)) {
-                context.workflow = installAuthoritativeObservation(
-                  context.workflow,
+                snapshotText,
+                context.workflow.currentPageUrl || context.target.url,
+                snapshotText.length === 0 ? 'empty' : 'complete',
+                (current, snapshot) => updateWorkflowContext(
+                  current,
                   'browser_snapshot',
-                  snapshotText,
-                  context.workflow.currentPageUrl || context.target.url,
-                  snapshotText.length === 0 ? 'empty' : 'complete',
-                );
-              }
-              snapshotText = context.workflow.lastRawSnapshot;
+                  {},
+                  true,
+                  { ...snapshotData, ...snapshot },
+                  context.workflowState,
+                ),
+              );
+              snapshotText = context.workflow.lastRawSnapshot || snapshotText;
             }
           }
 

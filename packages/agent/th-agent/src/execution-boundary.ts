@@ -349,13 +349,13 @@ export function formatI7BAlignDiagnostic(
   ];
 
   if (validation.diagnosticInfo.decisionOccurrence) {
-    parts.push(`decisionOccurrence=O${validation.diagnosticInfo.decisionOccurrence}`);
+    parts.push(`decisionOccurrence=${validation.diagnosticInfo.decisionOccurrence}`);
   } else {
     parts.push(`decisionOccurrence=LEGACY`);
   }
 
   if (validation.diagnosticInfo.currentOccurrence) {
-    parts.push(`currentOccurrence=O${validation.diagnosticInfo.currentOccurrence}`);
+    parts.push(`currentOccurrence=${validation.diagnosticInfo.currentOccurrence}`);
   } else {
     parts.push(`currentOccurrence=${validation.diagnosticInfo.currentStateKind}`);
   }
