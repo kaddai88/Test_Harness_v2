@@ -1,3 +1,15 @@
+# Runtime persistence
+/data/testharness.json
+/apps/server/th-server/data/testharness.json
+
+# Runtime cognition/profile state
+/.cognition/
+/.site-profiles/
+/apps/server/th-server/.site-profiles/
+
+# Generated root screenshot
+/screenshot.png
+
 # Dependencies
 node_modules/
 .pnpm-store/
