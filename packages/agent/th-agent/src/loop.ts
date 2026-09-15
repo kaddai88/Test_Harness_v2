@@ -24,6 +24,7 @@ import type {
   Message,
   SessionConfig,
   SessionTarget,
+  SessionStatusReason,
   ToolSchema,
 } from "@test-harness/th-protocol";
 import {
@@ -34,6 +35,7 @@ import {
   AgentRequestEvent,
   AgentTurnStoppingEvent,
   AgentStreamChunkEvent,
+  AgentFinalAssistantCommitEvent,
   ToolsPreExecuteEvent,
   ToolsPostExecuteEvent,
 } from "@test-harness/th-protocol";
@@ -43,6 +45,7 @@ import type {
   TurnResult,
 } from "./context.js";
 import type { ToolRegistry } from "@test-harness/th-tools";
+import { abortResult, classifyAbortOutcome, extractAbortReason } from "./abort.js";
 import type { EventBusImpl } from "@test-harness/th-core";
 import { getSystemPrompt, buildSessionPlanningPrompt, type SiteHints } from "./prompts/system.js";
 import { SessionLog } from "./session.js";
@@ -80,6 +83,12 @@ import {
   processAuthoritativeSnapshot,
 } from "./agentloop-integration.js";
 import { appendP2EObservationToRequest } from "./request-observation.js";
+import {
+  startLogicalTurn,
+  createStreamProducerState,
+  emitStreamEnvelope,
+  createFinalAssistantCommit,
+} from "./stream-generation.js";
 
 // Phase 4: Coverage-driven testing
 import {
@@ -474,6 +483,14 @@ export class AgentLoop {
         const result = await this.executeTurn(context, logger);
 
         if (result.complete) {
+          if (context.abortSignal.aborted) {
+            return abortResult(
+              options.sessionId,
+              context.turnCount,
+              extractAbortReason(context.abortSignal),
+            );
+          }
+
           // Log turn end with completed reason
           sessionLog.append("turn/end", {
             turn: context.turnCount,
@@ -485,15 +502,33 @@ export class AgentLoop {
           // ── Cognitive Engine: Session end — save memories ──
           await this.finalizeSession(context, "completed", result.response.content, logger);
           
+          if (context.abortSignal.aborted) {
+            const outcome = abortResult(
+              options.sessionId,
+              context.turnCount,
+              extractAbortReason(context.abortSignal),
+            );
+            return outcome;
+          }
+
           return {
             sessionId: options.sessionId,
             status: "completed",
+            reason: "completion_success",
             turns: context.turnCount,
             summary: result.response.content,
           };
         }
 
-        // Log turn end (continuing — tools need more work)
+        if (result.aborted) {
+        return abortResult(
+          context.sessionId,
+          context.turnCount,
+          result.abortReason ?? extractAbortReason(context.abortSignal),
+        );
+      }
+
+      // Log turn end (continuing — tools need more work)
         sessionLog.append("turn/end", {
           turn: context.turnCount,
           reason: { kind: "completed" },
@@ -513,9 +548,20 @@ export class AgentLoop {
         // ── Cognitive Engine: Session end — save memories ──
         await this.finalizeSession(context, "failed", error.message, logger);
         
+        if (context.abortSignal.aborted) {
+          const outcome = abortResult(
+            options.sessionId,
+            context.turnCount,
+            extractAbortReason(context.abortSignal),
+            error,
+          );
+          return outcome;
+        }
+
         return {
           sessionId: options.sessionId,
           status: "failed",
+          reason: "failure_exception",
           turns: context.turnCount,
           error,
         };
@@ -537,6 +583,7 @@ export class AgentLoop {
       return {
         sessionId: options.sessionId,
         status: "cancelled",
+        reason: "user_cancel_quiesced",
         turns: context.turnCount,
       };
     }
@@ -546,7 +593,8 @@ export class AgentLoop {
       
     return {
       sessionId: options.sessionId,
-      status: "timeout",
+      status: "failed",
+      reason: "execution_timeout",
       turns: context.turnCount,
       summary: "Maximum turns reached",
     };
@@ -866,6 +914,11 @@ export class AgentLoop {
     // ── Step 3: Call LLM (streaming) ──
     const assembler = new StreamAssembler();
     let lastStreamEmit = 0;
+    // P4 Phase 1A-R1: AgentLoop owns the v1 generation identity and sequence.
+    // `turnNumber` is mapped to a logical turn only for the current normal path;
+    // explicit same-turn retry allocation remains in stream-generation primitives.
+    const streamGeneration = startLogicalTurn(context.sessionId, `T${context.turnCount}`);
+    let streamProducer = createStreamProducerState(streamGeneration.identity);
 
     try {
       const stream = context.llm.stream({
@@ -884,12 +937,19 @@ export class AgentLoop {
         const now = Date.now();
         if (now - lastStreamEmit > 200 || assembler.done) {
           lastStreamEmit = now;
+          const streamUpdate = emitStreamEnvelope(
+            streamProducer,
+            assembler.partialContent,
+            assembler.done ? 'completed' : 'streaming',
+          );
+          streamProducer = streamUpdate.state;
           await eventBus.emit(AgentStreamChunkEvent, {
             sessionId: context.sessionId,
             turnNumber: context.turnCount,
             partialContent: assembler.partialContent,
             toolCallCount: assembler.toolCallCount,
             done: assembler.done,
+            streamEnvelope: streamUpdate.envelope,
           });
         }
       }
@@ -901,6 +961,22 @@ export class AgentLoop {
 
     // Assemble the complete response from streaming chunks
     const response = assembler.finish(requestConfig.model);
+
+    // ── P4 Phase 1D: generation-bound final assistant commit ──
+    // finalSeq references the producer-owned terminal stream sequence; this
+    // subsystem does not allocate a second sequence.
+    if (streamProducer.terminal) {
+      const terminalSeq = streamProducer.nextSeq - 1;
+      const finalCommit = createFinalAssistantCommit(
+        streamGeneration.identity,
+        terminalSeq,
+        response.content,
+      );
+      await eventBus.emit(AgentFinalAssistantCommitEvent, {
+        sessionId: context.sessionId,
+        commit: finalCommit,
+      });
+    }
 
     // Log assistant message
     sessionLog.append("assistant/message", {
@@ -1105,7 +1181,13 @@ export class AgentLoop {
         decision: "approve" as const,
       });
 
-      let result: { success: boolean; data?: unknown; error?: string } = {
+      let result: {
+        success: boolean;
+        data?: unknown;
+        error?: string;
+        aborted?: boolean;
+        abortReason?: import("@test-harness/th-protocol").AbortReason;
+      } = {
         success: false,
         error: "definitely_not_applied: execution not dispatched",
       };
@@ -1160,6 +1242,8 @@ export class AgentLoop {
               success: finalized.success,
               data: finalized.data,
               error: finalized.error,
+              aborted: finalized.aborted,
+              abortReason: finalized.abortReason,
             };
             duration = finalized.duration;
             logger.toolResult(toolCall.name, finalized.success, duration);
@@ -1247,7 +1331,19 @@ export class AgentLoop {
         success: result.success,
         data: result.data,
         error: result.error,
+        aborted: result.aborted,
+        abortReason: result.abortReason,
       });
+
+      if (result.aborted) {
+        return {
+          complete: false,
+          aborted: true,
+          abortReason: result.abortReason ?? extractAbortReason(context.abortSignal),
+          response: { content: response.content },
+          toolResults,
+        };
+      }
 
       // ── P2-E I7-B-R1 Integration Point 3: Post-execution invalidation ──
       // CRITICAL: After tool execution, classify effect and invalidate current if needed.

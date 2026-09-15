@@ -14,9 +14,16 @@ import type {
   DatabaseRepositories,
 } from "@test-harness/th-persistence";
 import type { LLMProvider } from "@test-harness/th-protocol";
+import type {
+  SessionStatusReason,
+  SessionStatus,
+  PostProcessingStatus,
+} from "@test-harness/th-protocol";
+import type { AgentResult } from "@test-harness/th-agent";
 import {
   AgentTurnStartedEvent,
   AgentStreamChunkEvent,
+  AgentFinalAssistantCommitEvent,
   AgentToolCallEvent,
   AgentToolResultEvent,
   type SessionTarget,
@@ -35,6 +42,7 @@ import {
 import type { SiteHints } from "@test-harness/th-agent";
 import { ToolRegistry, createAllTools, createMCPModeTools, createReportFindingTool, closeBrowser } from "@test-harness/th-tools";
 import { AgentLoop } from "@test-harness/th-agent";
+import { mapStreamEventToActivity } from "../stream-transport.js";
 import { calculateScore } from "@test-harness/th-report";
 import fs from "node:fs";
 import path from "node:path";
@@ -65,6 +73,114 @@ function werror(msg: string): void {
   console.error(`[Worker] ✗ ${msg}`);
 }
 
+interface ExecutionStopEvidence {
+  readonly kind: "never_started" | "confirmed";
+}
+
+class CancellationObserver {
+  private readonly controller = new AbortController();
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private requested = false;
+
+  constructor(
+    private readonly repos: DatabaseRepositories,
+    private readonly sessionId: string,
+  ) {}
+
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  get cancellationRequested(): boolean {
+    return this.requested;
+  }
+
+  start(): void {
+    this.timer = setInterval(() => {
+      void this.poll();
+    }, 2000);
+  }
+
+  private async poll(): Promise<void> {
+    try {
+      const session = await this.repos.sessions.findById(this.sessionId);
+      if (session?.status === "cancelling" || session?.status === "cancelled") {
+        this.requested = true;
+        if (!this.controller.signal.aborted) {
+          this.controller.abort({ reason: "user_cancel" });
+        }
+      }
+    } catch {
+      // A transient polling error must not invent a terminal outcome.
+    }
+  }
+
+  stop(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+}
+
+function confirmExecutionStop(
+  observer: CancellationObserver,
+  planningStarted: boolean,
+  agentSettled: boolean,
+): ExecutionStopEvidence | null {
+  // The worker creates evidence only after every operation it started has
+  // settled and no new execution work can begin. Intent/result alone is not
+  // sufficient; the call boundary supplies the stop fact.
+  if (!observer.cancellationRequested || !agentSettled) return null;
+  return { kind: planningStarted ? "confirmed" : "never_started" };
+}
+
+async function convergeCancellation(
+  repos: DatabaseRepositories,
+  sessionId: string,
+  evidence: ExecutionStopEvidence | null,
+): Promise<boolean> {
+  if (!evidence) return false;
+  const result = await repos.sessions.transitionStatus(sessionId, {
+    expected: ["cancelling"],
+    target: "cancelled",
+    reason: "user_cancel_quiesced",
+    sideEffects: {
+      terminalAt: new Date().toISOString(),
+      postProcessingStatus: "not_applicable",
+    },
+  });
+  return result.applied || result.currentState === "cancelled";
+}
+
+function postProcessingStatusFor(status: string): PostProcessingStatus {
+  return status === "cancelled" ? "not_applicable" : "pending";
+}
+
+async function terminalizeWorkerResult(
+  repos: DatabaseRepositories,
+  sessionId: string,
+  result: AgentResult,
+  evidence: ExecutionStopEvidence | null,
+): Promise<{ applied: boolean; status: string; allowPostProcessing: boolean }> {
+  const current = await repos.sessions.findById(sessionId);
+  if (!current) return { applied: false, status: "failed", allowPostProcessing: false };
+  const currentState = current.status === "pending" ? "queued" : current.status;
+  const status = result.status === "completed" ? "completed" : result.status === "cancelled" ? "cancelled" : "failed";
+  if (status === "cancelled" && !evidence) return { applied: false, status: currentState, allowPostProcessing: false };
+  const reason: SessionStatusReason = result.status === "completed" ? "completion_success" : result.status === "cancelled" ? "user_cancel_quiesced" : result.reason === "execution_timeout" ? "execution_timeout" : result.reason === "worker_shutdown" ? "worker_shutdown" : result.reason === "system_error" ? "system_error" : "failure_exception";
+  const initialPostProcessingStatus = postProcessingStatusFor(status);
+  const transition = await repos.sessions.transitionStatus(sessionId, {
+    expected: ["running", "cancelling"], target: status, reason,
+    sideEffects: { terminalAt: new Date().toISOString(), postProcessingStatus: initialPostProcessingStatus },
+  });
+  if (transition.applied) return { applied: true, status, allowPostProcessing: initialPostProcessingStatus === "pending" };
+  if (transition.currentState === "cancelling" && evidence) {
+    const converged = await convergeCancellation(repos, sessionId, evidence);
+    return { applied: converged, status: converged ? "cancelled" : "cancelling", allowPostProcessing: false };
+  }
+  return { applied: false, status: transition.currentState, allowPostProcessing: false };
+}
 export class TestSessionJobProcessor implements JobProcessor<JobData> {
   private readonly repos: DatabaseRepositories;
   private readonly llm: LLMProvider;
@@ -122,7 +238,14 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       throw new Error(`Session "${sessionId}" not found`);
     }
 
-    // ── Ensure site profile exists in DB ──
+    const observer = new CancellationObserver(this.repos, sessionId);
+    observer.start();
+    let planningStarted = false;
+    let agentSettled = false;
+    const disposables: Array<{ dispose(): void }> = [];
+
+    try {
+      // ── Ensure site profile exists in DB ──
     const siteHostname = normalizeToHostname(session.targetUrl);
     let siteProfile = await this.repos.sites.findByBaseUrl(siteHostname);
     if (!siteProfile) {
@@ -133,15 +256,24 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       wlog(`created site profile: ${siteHostname} (${siteProfile.id})`);
     }
 
-    // Update status to planning
-    await this.repos.sessions.updateStatus(sessionId, "planning");
-    await this.repos.sessions.updateStartedAt(sessionId);
-    this.broadcast("session:update", sessionId, { status: "planning", message: "AI is generating test plan..." });
-    const collectedFindings: Finding[] = [];
-    const collectedActivities: Record<string, unknown>[] = [];
-    const disposables: Array<{ dispose(): void }> = [];
+      // Update status to planning
+      const planningTransition = await this.repos.sessions.transitionStatus(sessionId, {
+        expected: ["pending" as SessionStatus, "queued"],
+        target: "planning",
+        reason: "lifecycle_start",
+      });
+      if (!planningTransition.applied) {
+        if (planningTransition.currentState === "cancelling") {
+          await convergeCancellation(this.repos, sessionId, { kind: "never_started" });
+        }
+        return { sessionId, skipped: true };
+      }
+      planningStarted = true;
+      await this.repos.sessions.updateStartedAt(sessionId);
+      this.broadcast("session:update", sessionId, { status: "planning", message: "AI is generating test plan..." });
+      const collectedFindings: Finding[] = [];
+      const collectedActivities: Record<string, unknown>[] = [];
 
-    try {
       // ── Build container & dependencies ──
       const container = new THContainer();
       const useMCPTools = process.env.BROWSER_MODE === "mcp";
@@ -170,7 +302,19 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
 
       // ── Status: planning → running ──
       // Tooling is ready; the AgentLoop is about to start actual test execution.
-      await this.repos.sessions.updateStatus(sessionId, "running");
+      const runningTransition = await this.repos.sessions.transitionStatus(sessionId, {
+        expected: ["planning"],
+        target: "running",
+        reason: "lifecycle_start",
+      });
+      if (!runningTransition.applied) {
+        if (runningTransition.currentState === "cancelling") {
+          await convergeCancellation(this.repos, sessionId, {
+            kind: planningStarted ? "confirmed" : "never_started",
+          });
+        }
+        return { sessionId, skipped: true };
+      }
       this.broadcast("session:update", sessionId, { status: "running", message: "Test execution started" });
 
       // ── Build SessionTarget / SessionConfig from session ──
@@ -212,15 +356,16 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
           collectedActivities.push(activity);
         }),
         container.events.on(AgentStreamChunkEvent, (d) => {
-          const activity = {
-            kind: "stream",
-            partial: d.partialContent,
-            done: d.done,
-            turn: d.turnNumber,
-            timestamp: Date.now(),
-          };
+          // Legacy compatibility fields and v1 envelope are both derived from
+          // the same producer event; mapping does not regenerate identity/seq.
+          const activity = mapStreamEventToActivity(d, sessionId, Date.now());
           this.broadcast("agent:activity", sessionId, activity);
           collectedActivities.push(activity);
+        }),
+        container.events.on(AgentFinalAssistantCommitEvent, (d) => {
+          this.broadcast("agent:final_assistant_commit", sessionId, {
+            commit: d.commit,
+          });
         }),
         container.events.on(AgentToolCallEvent, (d) => {
           const activity = {
@@ -280,24 +425,8 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       })();
 
       // ── Run the Agent Loop ──
-      const abortController = new AbortController();
-
-      // Poll for cancellation every 2 seconds
-      const cancelCheck = setInterval(async () => {
-        try {
-          const session = await this.repos.sessions.findById(sessionId);
-          if (session?.status === "cancelled") {
-            wlog(`session ${sessionId} cancelled by user, aborting`);
-            abortController.abort();
-            clearInterval(cancelCheck);
-          }
-        } catch {
-          // Ignore polling errors
-        }
-      }, 2000);
-
       const loop = new AgentLoop();
-      
+
       // Extract uploaded images from session metadata for vision-capable LLMs
       const uploadedImages = (session.metadata?.uploadedImages as string[] | undefined) ?? [];
       
@@ -310,36 +439,72 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         eventBus: container.events,
         container,
         siteHints,
-        signal: abortController.signal,
+        signal: observer.signal,
         images: uploadedImages,
       });
+      agentSettled = true;
 
-      clearInterval(cancelCheck);
+      // ── Persist results through the single terminalization helper ──
+      const stopEvidence = confirmExecutionStop(observer, planningStarted, agentSettled);
+      const terminal = await terminalizeWorkerResult(
+        this.repos,
+        sessionId,
+        result,
+        stopEvidence,
+      );
+      if (!terminal.applied) {
+        // The persisted state is authoritative. A rejected terminal CAS never
+        // grants this worker post-processing permission.
+        return { sessionId, status: terminal.status, skipped: true };
+      }
+      const status = terminal.status;
 
-      // ── Persist results ──
-      disposables.forEach((d) => d.dispose());
-
-      const status =
-        result.status === "failed"
-          ? "failed"
-          : result.status === "cancelled"
-            ? "cancelled"
-            : "completed";
-
-      // Generate execution summary
-      let executionSummary = null;
-      try {
-        executionSummary = await this.generateExecutionSummary(
-          collectedActivities,
-          collectedFindings,
-          result.summary ?? ""
-        );
-      } catch (err) {
-        werror('failed to generate execution summary: ' + (err instanceof Error ? err.message : String(err)));
+      // A cancelled terminalization has no normal post-processing permission.
+      // Release event subscriptions/browser resources before returning.
+      if (!terminal.allowPostProcessing) {
+        disposables.forEach((d) => d.dispose());
+        if (useMCPTools) {
+          const mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:3001/sse";
+          await closeBrowser(mcpUrl);
+        }
+        return {
+          sessionId,
+          status,
+          summary: result.summary,
+          findingCount: collectedFindings.length,
+        };
       }
 
-      await this.repos.sessions.updateStatus(sessionId, status);
-      await this.repos.sessions.updateCompletedAt(sessionId);
+      // Generate execution summary only after a successful terminal CAS.
+      let executionSummary = null;
+      if (terminal.allowPostProcessing) {
+        const ppStarted = await this.repos.sessions.transitionPostProcessingStatus(sessionId, {
+          expected: ["pending"],
+          target: "running",
+        });
+        if (!ppStarted.applied) {
+          return { sessionId, status, skipped: true };
+        }
+        try {
+          executionSummary = await this.generateExecutionSummary(
+            collectedActivities,
+            collectedFindings,
+            result.summary ?? "",
+          );
+          await this.repos.sessions.transitionPostProcessingStatus(sessionId, {
+            expected: ["running"],
+            target: "success",
+          });
+        } catch (err) {
+          werror('failed to generate execution summary: ' + (err instanceof Error ? err.message : String(err)));
+          await this.repos.sessions.transitionPostProcessingStatus(sessionId, {
+            expected: ["running"],
+            target: "failed",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
       const score = calculateScore(collectedFindings);
       await this.repos.sessions.updateMetadata(sessionId, {
         summary: result.summary ?? "",
@@ -425,13 +590,23 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[TestSessionJobProcessor] Session ${sessionId} failed:`, errorMsg);
       disposables.forEach((d) => d.dispose());
-      await this.repos.sessions.updateStatus(sessionId, "failed");
-      await this.repos.sessions.updateCompletedAt(sessionId);
-      this.broadcast("session:failed", sessionId, {
+      const evidence = confirmExecutionStop(observer, planningStarted, true);
+      const terminal = await terminalizeWorkerResult(this.repos, sessionId, {
+        sessionId,
         status: "failed",
-        error: errorMsg,
-      });
+        reason: "failure_exception",
+        turns: 0,
+        error: err instanceof Error ? err : new Error(errorMsg),
+      }, evidence);
+      if (terminal.applied) {
+        this.broadcast("session:failed", sessionId, {
+          status: terminal.status,
+          error: errorMsg,
+        });
+      }
       throw err;
+    } finally {
+      observer.stop();
     }
   }
 

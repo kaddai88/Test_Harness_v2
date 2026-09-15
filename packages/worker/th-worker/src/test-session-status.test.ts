@@ -12,7 +12,7 @@
  * tool registry is ready and BEFORE AgentLoop.run() is invoked. The status
  * must never go straight from planning → completed.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -96,6 +96,18 @@ function makeRepos() {
     async findById(id: string) {
       return id === session.id ? { ...session, metadata: { ...session.metadata } } : null;
     },
+    async transitionStatus(id: string, options: any) {
+      if (id !== session.id) return { applied: false, currentState: session.status };
+      const current = session.status === "pending" ? "queued" : session.status;
+      if (!options.expected.includes(current)) return { applied: false, currentState: current };
+      session.status = options.target;
+      statusHistory.push(options.target);
+      if (options.sideEffects?.terminalAt) {
+        session.completedAt = options.sideEffects.terminalAt;
+      }
+      return { applied: true, currentState: options.target, previousState: current };
+    },
+    async transitionPostProcessingStatus() { return { applied: true, currentState: "success" }; },
     async updateStatus(id: string, status: string) {
       if (id !== session.id) return;
       // Record only actual transitions (skip duplicate same-status calls)
@@ -129,11 +141,30 @@ function makeRepos() {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("P1-E: session status flow", () => {
+  let activeIntervals = 0;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+
   beforeEach(() => {
+    activeIntervals = 0;
+    globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: any[]) => {
+      activeIntervals += 1;
+      return originalSetInterval(handler, timeout, ...args);
+    }) as typeof setInterval;
+    globalThis.clearInterval = ((id: number | NodeJS.Timeout) => {
+      activeIntervals = Math.max(0, activeIntervals - 1);
+      return originalClearInterval(id);
+    }) as typeof clearInterval;
     // Suppress console noise from the processor
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+    vi.restoreAllMocks();
   });
 
   it("transitions pending → planning → running → completed", async () => {
@@ -158,6 +189,7 @@ describe("P1-E: session status flow", () => {
     // The full lifecycle must be: planning → running → completed
     // (pending is set by the API layer before the job is enqueued)
     expect(statusHistory).toEqual(["planning", "running", "completed"]);
+    expect(activeIntervals).toBe(0);
   });
 
   it("broadcasts session:update with running status before execution", async () => {
@@ -211,5 +243,6 @@ describe("P1-E: session status flow", () => {
 
     // Status must have reached "running" before failing, then end at "failed"
     expect(statusHistory).toEqual(["planning", "running", "failed"]);
+    expect(activeIntervals).toBe(0);
   });
 });

@@ -4,6 +4,13 @@
  * Agent Loop — the AI-driven session orchestrator.
  */
 export { AgentLoop } from "./loop.js";
+export { classifyAbortOutcome, abortResult, extractAbortReason } from "./abort.js";
+export type { AbortOutcome } from "./abort.js";
+export type {
+  ExecutionStopEvidence,
+  ExecutionStopFacts,
+} from "./execution-stop-evidence.js";
+export { isExecutionStopEvidence, reportExecutionStopFacts } from "./execution-stop-evidence.js";
 export type { AgentLoopOptions, AgentLogger } from "./loop.js";
 export type {
   AgentContext,

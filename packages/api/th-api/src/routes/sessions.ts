@@ -76,8 +76,6 @@ export async function handleCreateSession(
     { priority: 0 }
   );
 
-  await deps.repos.sessions.updateStatus(session.id, "pending");
-
   sendJson(res, 201, session);
 }
 
@@ -165,7 +163,7 @@ export async function handleDeleteSession(
   sendJson(res, 200, { deleted: true });
 }
 
-/** POST /api/v1/sessions/:id/cancel — cancel a running session. */
+/** POST /api/v1/sessions/:id/cancel — request cancellation of a session. */
 export async function handleCancelSession(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -183,16 +181,39 @@ export async function handleCancelSession(
     return;
   }
 
-  if (session.status === "completed" || session.status === "failed") {
-    sendJson(res, 409, {
-      error: `Cannot cancel session in "${session.status}" status`,
-    });
+  const transition = await deps.repos.sessions.transitionStatus(id, {
+    expected: ["queued", "planning", "running"],
+    target: "cancelling",
+    reason: "user_cancel_requested",
+    sideEffects: {
+      cancelRequestedAt: new Date().toISOString(),
+    },
+  });
+
+  if (transition.applied) {
+    sendJson(res, 202, { accepted: true });
     return;
   }
 
-  await deps.repos.sessions.updateStatus(id, "cancelled");
-  await deps.repos.sessions.updateCompletedAt(id);
-  sendJson(res, 200, { cancelled: true });
+  switch (transition.currentState) {
+    case "cancelling":
+      sendJson(res, 202, { accepted: true, alreadyCancelling: true });
+      return;
+    case "cancelled":
+      sendJson(res, 202, { accepted: true, alreadyCancelled: true });
+      return;
+    case "completed":
+    case "failed":
+      sendJson(res, 202, {
+        accepted: false,
+        alreadyTerminal: true,
+        terminalStatus: transition.currentState,
+      });
+      return;
+    default:
+      // Unknown lifecycle state: fail closed rather than claiming cancellation.
+      sendJson(res, 500, { error: "unknown_session_state" });
+  }
 }
 
 /** Route dispatcher for session endpoints. */

@@ -8,8 +8,28 @@
  * No more free-text `targetUrl` matching — data is categorized by site.
  */
 import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "../schema.js";
+import type {
+  TransitionSideEffects,
+  TransitionStatusOptions,
+  TransitionStatusResult,
+} from "./transition.js";
 
-// ── Session Repository ──
+export type {
+  TransitionSideEffects,
+  TransitionStatusOptions,
+  TransitionStatusResult,
+} from "./transition.js";
+
+import type {
+  PostProcessingTransitionOptions,
+  PostProcessingTransitionResult,
+} from "./post-processing.js";
+
+export type {
+  PostProcessingTransitionOptions,
+  PostProcessingTransitionResult,
+} from "./post-processing.js";
+
 
 export interface CreateSessionInput {
   id?: string;
@@ -32,7 +52,8 @@ export interface SessionRepository {
   create(input: CreateSessionInput): Promise<SessionRow>;
   findById(id: string): Promise<SessionRow | null>;
   findAll(filter?: SessionFilter): Promise<SessionRow[]>;
-  updateStatus(id: string, status: string): Promise<void>;
+  transitionStatus(id: string, options: TransitionStatusOptions): Promise<TransitionStatusResult>;
+  transitionPostProcessingStatus(id: string, options: PostProcessingTransitionOptions): Promise<PostProcessingTransitionResult>;
   updateStartedAt(id: string): Promise<void>;
   updateCompletedAt(id: string): Promise<void>;
   updateMetadata(id: string, metadata: Record<string, unknown>): Promise<void>;

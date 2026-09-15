@@ -32,7 +32,7 @@ export const SessionDetail: React.FC = () => {
     }
   }, [id, fetchSession]);
 
-  const isActive: boolean = !!(currentSession?.status === 'running' || currentSession?.status === 'pending' || currentSession?.status === 'planning' || currentSession?.status === 'executing');
+  const isActive: boolean = !!(currentSession?.status === 'running' || currentSession?.status === 'pending' || currentSession?.status === 'planning' || currentSession?.status === 'executing' || currentSession?.status === 'cancelling');
 
   // Load activities from metadata for completed sessions
   const historicalActivities: AgentActivity[] = useMemo(() => {
@@ -112,7 +112,7 @@ export const SessionDetail: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {isActive && (
+          {isActive && currentSession.status !== 'cancelling' && (
             <Button variant="danger" onClick={() => id && cancelSession(id)}>
               Cancel
             </Button>
@@ -127,12 +127,18 @@ export const SessionDetail: React.FC = () => {
 
       {isActive && (
         <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2.5">
-          <Spinner size="sm" />
-          <span className="text-sm font-medium text-blue-300">
-            {phase === 'planning' ? ' AI is generating test plan...' :
-             phase === 'executing' ? '🔧 Running browser tests...' :
-             `⏳ ${phase}`}
-          </span>
+          {currentSession.status === 'cancelling' ? (
+            <span className="text-sm font-medium text-orange-300">Cancelling…</span>
+          ) : (
+            <>
+              <Spinner size="sm" />
+              <span className="text-sm font-medium text-blue-300">
+                {phase === 'planning' ? ' AI is generating test plan...' :
+                 phase === 'executing' ? '🔧 Running browser tests...' :
+                 `⏳ ${phase}`}
+              </span>
+            </>
+          )}
           <span className="ml-auto text-xs">
             {wsConnected ? (
               <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-emerald-400"> WS connected</span>
@@ -159,6 +165,13 @@ export const SessionDetail: React.FC = () => {
           </div>
         );
       })()}
+
+      {currentSession.postProcessingStatus && currentSession.postProcessingStatus !== 'not_started' && currentSession.postProcessingStatus !== 'not_applicable' && (
+        <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-2 text-sm text-slate-300">
+          Enrichment: {currentSession.postProcessingStatus}
+          {currentSession.postProcessingError && ` — ${currentSession.postProcessingError}`}
+        </div>
+      )}
 
       {/* ── Main Chat Stream ── */}
       <Card className="min-h-[400px] max-h-[70vh] overflow-y-auto scrollbar-thin">

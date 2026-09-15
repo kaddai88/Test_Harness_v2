@@ -2,14 +2,43 @@ import { create } from 'zustand';
 import { api } from '../api/client';
 import { sessionWebSocket } from '../api/websocket';
 import type { Session, Finding, AgentActivity } from '../types';
+import {
+  initialStreamReducerState,
+  reduceStreamEnvelope,
+  selectActiveStream,
+  type StreamReducerState,
+} from './streamReducer';
+import { applyFinalAssistantCommit } from './finalCommitReducer';
+
+/**
+ * Apply one AgentActivity to the authoritative v1 stream state.
+ * Valid streamEnvelope always wins; legacy partial/done fields from the same
+ * activity are compatibility-only and never mutate stream state.
+ */
+export function applyAgentActivityToStreamState(
+  state: StreamReducerState,
+  activity: AgentActivity,
+  selectedSessionId?: string,
+): { streamState: StreamReducerState; streamText: string } {
+  if (activity.kind !== 'stream' || !activity.streamEnvelope) {
+    return {
+      streamState: state,
+      streamText: selectedSessionId ? selectActiveStream(state, selectedSessionId)?.content ?? '' : '',
+    };
+  }
+  const streamState = reduceStreamEnvelope(state, activity.streamEnvelope);
+  const active = selectedSessionId ? selectActiveStream(streamState, selectedSessionId) : null;
+  return { streamState, streamText: active?.content ?? '' };
+}
 
 interface SessionStore {
   sessions: Session[];
   currentSession: Session | null;
   findings: Finding[];
   agentActivity: AgentActivity[];
-  /** Accumulated stream text for the current turn */
+  /** Derived compatibility selector for the current session's active v1 stream */
   streamText: string;
+  streamState: StreamReducerState;
   loading: boolean;
   error: string | null;
   /** WebSocket connection status */
@@ -42,6 +71,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   findings: [],
   agentActivity: [],
   streamText: '',
+  streamState: initialStreamReducerState,
   loading: false,
   error: null,
   wsConnected: false,
@@ -75,6 +105,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set({
         currentSession: session,
         findings: session.findings ?? [],
+        streamText: selectActiveStream(get().streamState, id)?.content ?? '',
         loading: false,
       });
     } catch (error) {
@@ -113,10 +144,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       await api.cancelSession(id);
       const { currentSession } = get();
       if (currentSession && currentSession.id === id) {
-        set({ currentSession: { ...currentSession, status: 'cancelled' } });
+        set({ currentSession: { ...currentSession, status: 'cancelling' } });
       }
       set({ loading: false });
     } catch (error) {
+      // The API remains authoritative. Reconcile optimistic state instead of
+      // leaving the UI falsely stuck in cancelling after a failed request.
+      await get().fetchSession(id);
       set({
         error: error instanceof Error ? error.message : 'Failed to cancel session',
         loading: false,
@@ -174,22 +208,52 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set({ findings });
     });
 
-    const unsubActivity = sessionWebSocket.onAgentActivity((activity) => {
-      const { streamText } = get();
+    const unsubFinalCommit = sessionWebSocket.onFinalAssistantCommit((commit) => {
+      set((state) => {
+        const applied = applyFinalAssistantCommit(state.streamState, commit);
+        if (!applied.result.accepted) return state;
+        const active = selectActiveStream(applied.state, state.currentSession?.id ?? commit.sessionId);
+        return {
+          streamState: applied.state,
+          // Final handoff is generation-bound and session-scoped. P4 1D does
+          // not create session terminal status; it only makes final content
+          // available as the authoritative presentation for that generation.
+          streamText: active?.finalContent ?? active?.content ?? state.streamText,
+        };
+      });
+    });
 
-      if (activity.kind === 'stream' && activity.partial) {
-        set({
-          streamText: streamText + activity.partial,
-          agentActivity: [...get().agentActivity, activity],
+    const unsubActivity = sessionWebSocket.onAgentActivity((activity) => {
+      if (activity.kind === 'stream' && activity.streamEnvelope) {
+        const envelope = activity.streamEnvelope;
+        set((state) => {
+          const applied = applyAgentActivityToStreamState(
+            state.streamState,
+            activity,
+            state.currentSession?.id ?? envelope.sessionId,
+          );
+          return {
+            ...applied,
+            agentActivity: [...state.agentActivity, activity],
+          };
         });
         return;
       }
 
+      // Legacy stream events remain compatibility-only until the v1 reducer
+      // rollout is complete; they cannot mutate authoritative v1 stream state.
+      if (activity.kind === 'stream') {
+        set((state) => ({
+          agentActivity: [...state.agentActivity, activity],
+        }));
+        return;
+      }
+
       if (activity.kind === 'turn_started' || activity.kind === 'tool_call') {
-        set({
-          streamText: '',
-          agentActivity: [...get().agentActivity, activity],
-        });
+        set((state) => ({
+          streamText: selectActiveStream(state.streamState, activity.sessionId ?? '')?.content ?? '',
+          agentActivity: [...state.agentActivity, activity],
+        }));
         return;
       }
 
@@ -253,6 +317,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       unsubStatus();
       unsubFinding();
       unsubActivity();
+      unsubFinalCommit();
       unsubSessionStatus();
       unsubCompleted();
       unsubWorkflow();

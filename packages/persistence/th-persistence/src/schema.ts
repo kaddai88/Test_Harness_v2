@@ -28,6 +28,11 @@ export interface SessionRow {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  cancelRequestedAt: string | null;
+  terminalAt: string | null;
+  statusReason: string | null;
+  postProcessingStatus: string;
+  postProcessingError: string | null;
   createdBy: string | null;
   metadata: Record<string, unknown>;
 }
@@ -138,7 +143,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   started_at    TIMESTAMPTZ,
   completed_at  TIMESTAMPTZ,
   created_by    TEXT,
-  metadata      JSONB NOT NULL DEFAULT '{}'
+  metadata      JSONB NOT NULL DEFAULT '{}',
+  cancel_requested_at TIMESTAMPTZ,
+  terminal_at   TIMESTAMPTZ,
+  status_reason TEXT,
+  post_processing_status VARCHAR(20) NOT NULL DEFAULT 'not_started',
+  post_processing_error TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -237,7 +247,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   started_at    TEXT,
   completed_at  TEXT,
   created_by    TEXT,
-  metadata      TEXT NOT NULL DEFAULT '{}'
+  metadata      TEXT NOT NULL DEFAULT '{}',
+  cancel_requested_at TEXT,
+  terminal_at   TEXT,
+  status_reason  TEXT,
+  post_processing_status TEXT NOT NULL DEFAULT 'not_started',
+  post_processing_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reports (

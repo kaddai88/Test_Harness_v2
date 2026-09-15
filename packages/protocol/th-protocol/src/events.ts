@@ -66,16 +66,28 @@ export const AgentToolResultEvent =
 export interface AgentStreamChunkEventData {
   sessionId: string;
   turnNumber: number;
-  /** Partial text content accumulated so far */
+  /** Partial text content accumulated so far (legacy compatibility field) */
   partialContent: string;
   /** Number of tool calls detected so far */
   toolCallCount: number;
-  /** Whether the stream is complete */
+  /** Whether the stream is complete (legacy compatibility field) */
   done: boolean;
+  /** P4 v1 producer-owned envelope; added without changing legacy fields */
+  streamEnvelope?: StreamEnvelope;
 }
 
 export const AgentStreamChunkEvent = defineEvent<AgentStreamChunkEventData>(
   "agent:stream_chunk",
+  { durable: false }
+);
+
+export interface AgentFinalAssistantCommitEventData {
+  readonly sessionId: string;
+  readonly commit: FinalAssistantCommit;
+}
+
+export const AgentFinalAssistantCommitEvent = defineEvent<AgentFinalAssistantCommitEventData>(
+  "agent:final_assistant_commit",
   { durable: false }
 );
 

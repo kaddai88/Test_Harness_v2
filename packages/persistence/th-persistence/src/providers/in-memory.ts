@@ -8,6 +8,10 @@ import type {
   SessionRepository,
   CreateSessionInput,
   SessionFilter,
+  TransitionStatusOptions,
+  TransitionStatusResult,
+  PostProcessingTransitionOptions,
+  PostProcessingTransitionResult,
   ReportRepository,
   CreateReportInput,
   SiteProfileRepository,
@@ -15,6 +19,9 @@ import type {
   CognitionRepository,
 } from "../repositories/interfaces.js";
 import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "../schema.js";
+import { assertValidTransition, canonicalSessionStatus, TERMINAL_SESSION_STATES } from "../repositories/transition.js";
+import type { PostProcessingStatus } from "@test-harness/th-protocol";
+import { assertValidPostProcessingTransition } from "../repositories/post-processing.js";
 
 function uuid(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
@@ -46,6 +53,11 @@ export class InMemorySessionRepository implements SessionRepository {
       createdAt: now(),
       startedAt: null,
       completedAt: null,
+      cancelRequestedAt: null,
+      terminalAt: null,
+      statusReason: null,
+      postProcessingStatus: "not_started",
+      postProcessingError: null,
       createdBy: input.createdBy ?? null,
       metadata: input.metadata ?? {},
     };
@@ -71,11 +83,54 @@ export class InMemorySessionRepository implements SessionRepository {
     return rows.map((r) => ({ ...r }));
   }
 
-  async updateStatus(id: string, status: string): Promise<void> {
+  async transitionStatus(id: string, options: TransitionStatusOptions): Promise<TransitionStatusResult> {
     const row = this.store.get(id);
-    if (row) row.status = status;
+    if (!row) return { applied: false, currentState: "queued" };
+
+    const currentState = canonicalSessionStatus(row.status);
+    if (!options.expected.includes(currentState) || TERMINAL_SESSION_STATES.includes(currentState)) {
+      return { applied: false, currentState };
+    }
+    if (options.target === currentState) {
+      return { applied: false, currentState };
+    }
+
+    assertValidTransition(currentState, options);
+
+    const effects = options.sideEffects ?? {};
+    if (effects.cancelRequestedAt !== undefined && row.cancelRequestedAt !== null) {
+      throw new Error("cancelRequestedAt is write-once");
+    }
+    if (effects.terminalAt !== undefined && row.terminalAt !== null) {
+      throw new Error("terminalAt is write-once");
+    }
+
+    row.status = options.target;
+    row.statusReason = options.reason;
+    if (effects.cancelRequestedAt !== undefined) row.cancelRequestedAt = effects.cancelRequestedAt;
+    if (effects.terminalAt !== undefined) {
+      row.terminalAt = effects.terminalAt;
+      row.completedAt = effects.terminalAt;
+    }
+    if (effects.postProcessingStatus !== undefined) {
+      row.postProcessingStatus = effects.postProcessingStatus;
+    }
+    return { applied: true, currentState: options.target, previousState: currentState };
   }
 
+  async transitionPostProcessingStatus(id: string, options: PostProcessingTransitionOptions): Promise<PostProcessingTransitionResult> {
+    const row = this.store.get(id);
+    if (!row) return { applied: false, currentState: "not_started" };
+    const currentState = row.postProcessingStatus as PostProcessingStatus;
+    if (currentState === options.target && options.expected.includes(currentState)) {
+      return { applied: false, currentState };
+    }
+    if (!options.expected.includes(currentState)) return { applied: false, currentState };
+    assertValidPostProcessingTransition(row.status, currentState, options);
+    row.postProcessingStatus = options.target;
+    row.postProcessingError = options.target === "failed" ? options.error ?? null : null;
+    return { applied: true, currentState: options.target, previousState: currentState };
+  }
   async updateStartedAt(id: string): Promise<void> {
     const row = this.store.get(id);
     if (row) row.startedAt = now();

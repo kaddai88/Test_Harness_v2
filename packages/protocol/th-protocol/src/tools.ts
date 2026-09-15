@@ -8,6 +8,7 @@
  * Each stage is interceptable via waterfall events (ToolsPreExecuteEvent,
  * ToolsPostExecuteEvent) allowing plugins to modify input/output.
  */
+import type { AbortReason } from "./lifecycle.js";
 import type { z } from "zod";
 
 /** Tool category */
@@ -24,6 +25,8 @@ export interface ToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
+  aborted?: boolean;
+  abortReason?: AbortReason;
   duration: number;
 }
 

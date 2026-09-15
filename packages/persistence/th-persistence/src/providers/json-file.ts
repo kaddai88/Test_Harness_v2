@@ -4,10 +4,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from '../schema.js';
+import { assertValidTransition, canonicalSessionStatus, TERMINAL_SESSION_STATES } from "../repositories/transition.js";
+import type { PostProcessingStatus } from "@test-harness/th-protocol";
+import { assertValidPostProcessingTransition } from "../repositories/post-processing.js";
 import type {
   SessionRepository,
   CreateSessionInput,
   SessionFilter,
+  TransitionStatusOptions,
+  TransitionStatusResult,
+  PostProcessingTransitionOptions,
+  PostProcessingTransitionResult,
   ReportRepository,
   CreateReportInput,
   SiteProfileRepository,
@@ -30,6 +37,20 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function normalizeSessionRow(row: Partial<SessionRow> & Pick<SessionRow, 'id' | 'targetUrl' | 'targetConfig' | 'scanConfig' | 'createdAt' | 'createdBy' | 'metadata'>): SessionRow {
+  return {
+    ...row,
+    status: row.status ?? 'pending',
+    startedAt: row.startedAt ?? null,
+    completedAt: row.completedAt ?? null,
+    cancelRequestedAt: row.cancelRequestedAt ?? null,
+    terminalAt: row.terminalAt ?? null,
+    statusReason: row.statusReason ?? null,
+    postProcessingStatus: row.postProcessingStatus ?? 'not_started',
+    postProcessingError: row.postProcessingError ?? null,
+  };
+}
+
 /** Ensure parent directory exists */
 function ensureDir(filePath: string): void {
   const dir = path.dirname(filePath);
@@ -50,6 +71,7 @@ export class JsonFileDatabase {
     cognition_procedures: Record<string, CognitionProcedureRow>;
     cognition_patterns: Record<string, CognitionPatternRow>;
   };
+  private lock: Promise<void> = Promise.resolve();
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -79,7 +101,9 @@ export class JsonFileDatabase {
         delete raw.detectionResults;
         delete raw.scanEvents;
         this.data = {
-          sessions: raw.sessions ?? {},
+          sessions: Object.fromEntries(
+            Object.entries(raw.sessions ?? {}).map(([id, row]) => [id, normalizeSessionRow(row as SessionRow)]),
+          ),
           reports: raw.reports ?? {},
           sites: raw.sites ?? {},
           cognition_episodes: raw.cognition_episodes ?? {},
@@ -101,6 +125,18 @@ export class JsonFileDatabase {
       fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
     } catch (err) {
       console.error('[JsonDB] Failed to save:', err);
+    }
+  }
+
+  async withTransitionLock<T>(operation: () => Promise<T> | T): Promise<T> {
+    const previous = this.lock;
+    let release!: () => void;
+    this.lock = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
     }
   }
 
@@ -129,6 +165,11 @@ export class JsonFileSessionRepository implements SessionRepository {
       createdAt: now(),
       startedAt: null,
       completedAt: null,
+      cancelRequestedAt: null,
+      terminalAt: null,
+      statusReason: null,
+      postProcessingStatus: 'not_started',
+      postProcessingError: null,
       createdBy: input.createdBy ?? null,
       metadata: input.metadata ?? {},
     };
@@ -155,14 +196,55 @@ export class JsonFileSessionRepository implements SessionRepository {
     return rows.map((r) => ({ ...r }));
   }
 
-  async updateStatus(id: string, status: string): Promise<void> {
-    const row = this.db.getData().sessions[id];
-    if (row) {
-      row.status = status;
+  async transitionStatus(id: string, options: TransitionStatusOptions): Promise<TransitionStatusResult> {
+    return this.db.withTransitionLock(() => {
+      const row = this.db.getData().sessions[id];
+      if (!row) return { applied: false, currentState: 'queued' };
+
+      const currentState = canonicalSessionStatus(row.status);
+      if (!options.expected.includes(currentState) || TERMINAL_SESSION_STATES.includes(currentState)) {
+        return { applied: false, currentState };
+      }
+      if (options.target === currentState) return { applied: false, currentState };
+
+      assertValidTransition(currentState, options);
+      const effects = options.sideEffects ?? {};
+      if (effects.cancelRequestedAt !== undefined && row.cancelRequestedAt !== null) {
+        throw new Error('cancelRequestedAt is write-once');
+      }
+      if (effects.terminalAt !== undefined && row.terminalAt !== null) {
+        throw new Error('terminalAt is write-once');
+      }
+
+      row.status = options.target;
+      row.statusReason = options.reason;
+      if (effects.cancelRequestedAt !== undefined) row.cancelRequestedAt = effects.cancelRequestedAt;
+      if (effects.terminalAt !== undefined) {
+        row.terminalAt = effects.terminalAt;
+        row.completedAt = effects.terminalAt;
+      }
+      if (effects.postProcessingStatus !== undefined) row.postProcessingStatus = effects.postProcessingStatus;
       this.db.save();
-    }
+      return { applied: true, currentState: options.target, previousState: currentState };
+    });
   }
 
+  async transitionPostProcessingStatus(id: string, options: PostProcessingTransitionOptions): Promise<PostProcessingTransitionResult> {
+    return this.db.withTransitionLock(() => {
+      const row = this.db.getData().sessions[id];
+      if (!row) return { applied: false, currentState: "not_started" };
+      const currentState = row.postProcessingStatus as PostProcessingStatus;
+      if (currentState === options.target && options.expected.includes(currentState)) {
+        return { applied: false, currentState };
+      }
+      if (!options.expected.includes(currentState)) return { applied: false, currentState };
+      assertValidPostProcessingTransition(row.status, currentState, options);
+      row.postProcessingStatus = options.target;
+      row.postProcessingError = options.target === "failed" ? options.error ?? null : null;
+      this.db.save();
+      return { applied: true, currentState: options.target, previousState: currentState };
+    });
+  }
   async updateStartedAt(id: string): Promise<void> {
     const row = this.db.getData().sessions[id];
     if (row) {

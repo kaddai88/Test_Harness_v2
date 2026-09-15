@@ -10,11 +10,13 @@
  */
 import { defineService, type THContainer } from "@test-harness/th-core";
 import type {
+  AbortReason,
   Tool,
   ToolContext,
   ToolResult,
   ToolSchema,
 } from "@test-harness/th-protocol";
+import { extractAbortReason } from "@test-harness/th-protocol";
 
 export const ToolServiceDefinition = defineService<Tool>("Tool");
 
@@ -183,6 +185,8 @@ export class ToolRegistry {
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
+        aborted: context.abortSignal.aborted,
+        abortReason: context.abortSignal.aborted ? extractAbortReason(context.abortSignal) : undefined,
         duration: Date.now() - start,
       };
     } finally {

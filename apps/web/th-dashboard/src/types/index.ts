@@ -1,4 +1,7 @@
-export type SessionStatus = 'pending' | 'planning' | 'executing' | 'running' | 'completed' | 'failed' | 'cancelled';
+import type { PostProcessingStatus as ProtocolPostProcessingStatus, SessionStatus as ProtocolSessionStatus } from '@test-harness/th-protocol';
+
+export type SessionStatus = ProtocolSessionStatus | 'pending' | 'executing';
+export type PostProcessingStatus = ProtocolPostProcessingStatus;
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 export interface Session {
@@ -8,6 +11,8 @@ export interface Session {
   targetConfig?: Record<string, unknown>;
   scanConfig?: Record<string, unknown>;
   status: SessionStatus;
+  postProcessingStatus?: PostProcessingStatus;
+  postProcessingError?: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -49,6 +54,16 @@ export interface Finding {
   createdAt: string;
 }
 
+export interface FinalAssistantCommit {
+  readonly streamContractVersion: 1;
+  readonly sessionId: string;
+  readonly logicalTurn: string;
+  readonly generationId: string;
+  readonly generationOrdinal: number;
+  readonly finalSeq: number;
+  readonly content: string;
+}
+
 export interface AgentActivity {
   id: string;
   sessionId?: string;
@@ -60,7 +75,21 @@ export interface AgentActivity {
   /** Partial streamed text (kind: "stream") */
   partial?: string;
   done?: boolean;
+  /** P4 v1 envelope, normalized at the transport boundary */
+  streamEnvelope?: StreamEnvelope;
   timestamp: number;
+}
+
+export interface StreamEnvelope {
+  readonly streamContractVersion: 1;
+  readonly sessionId: string;
+  readonly logicalTurn: string;
+  readonly generationId: string;
+  readonly generationOrdinal: number;
+  readonly seq: number;
+  readonly payloadMode: 'accumulated';
+  readonly content: string;
+  readonly status: 'streaming' | 'completed' | 'errored' | 'cancelled';
 }
 
 export interface HealthStatus {

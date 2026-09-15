@@ -1,6 +1,46 @@
-import type { Finding, AgentActivity } from '../types';
+import type { Finding, AgentActivity, StreamEnvelope } from '../types';
 
 type EventHandler = (data: unknown) => void;
+
+/** Normalize a generation-bound final assistant commit at transport boundary. */
+export function normalizeFinalAssistantCommit(value: unknown, outerSessionId?: string): import('../types').FinalAssistantCommit | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const commit = value as Record<string, unknown>;
+  if (commit.streamContractVersion !== 1
+    || typeof commit.sessionId !== 'string'
+    || (outerSessionId !== undefined && commit.sessionId !== outerSessionId)
+    || typeof commit.logicalTurn !== 'string' || !/^T\d+$/.test(commit.logicalTurn)
+    || typeof commit.generationId !== 'string' || commit.generationId.length === 0
+    || typeof commit.generationOrdinal !== 'number' || !Number.isInteger(commit.generationOrdinal) || commit.generationOrdinal < 1
+    || typeof commit.finalSeq !== 'number' || !Number.isInteger(commit.finalSeq) || commit.finalSeq < 1
+    || typeof commit.content !== 'string') return undefined;
+  return commit as unknown as import('../types').FinalAssistantCommit;
+}
+
+export function normalizeStreamEnvelope(value: unknown, outerSessionId?: string): StreamEnvelope | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.streamContractVersion !== 1
+    || typeof candidate.sessionId !== 'string'
+    || candidate.sessionId.length === 0
+    || (outerSessionId !== undefined && candidate.sessionId !== outerSessionId)
+    || typeof candidate.logicalTurn !== 'string'
+    || !/^T\d+$/.test(candidate.logicalTurn)
+    || typeof candidate.generationId !== 'string'
+    || candidate.generationId.length === 0
+    || typeof candidate.generationOrdinal !== 'number'
+    || !Number.isInteger(candidate.generationOrdinal)
+    || candidate.generationOrdinal < 1
+    || typeof candidate.seq !== 'number'
+    || !Number.isInteger(candidate.seq)
+    || candidate.seq <= 0
+    || candidate.payloadMode !== 'accumulated'
+    || typeof candidate.content !== 'string'
+    || !['streaming', 'completed', 'errored', 'cancelled'].includes(candidate.status as string)) {
+    return undefined;
+  }
+  return candidate as unknown as StreamEnvelope;
+}
 
 export class SessionWebSocket {
   private ws: WebSocket | null = null;
@@ -107,7 +147,11 @@ export class SessionWebSocket {
     return () => this.off('session:finding', wrapped);
   }
 
-  /** agent:activity — real-time step from the agent loop */
+  private normalizeStreamEnvelope(value: unknown, outerSessionId?: string): StreamEnvelope | undefined {
+    return normalizeStreamEnvelope(value, outerSessionId);
+  }
+
+
   onAgentActivity(handler: (activity: AgentActivity) => void): () => void {
     const wrapped = (data: unknown) => {
       const msg = data as Record<string, unknown>;
@@ -122,6 +166,7 @@ export class SessionWebSocket {
         success: msg.success as boolean | undefined,
         partial: msg.partial as string | undefined,
         done: msg.done as boolean | undefined,
+        streamEnvelope: this.normalizeStreamEnvelope(msg.streamEnvelope, msg.sessionId as string | undefined),
         timestamp: msg.timestamp as number ?? Date.now(),
       };
       handler(activity);
@@ -130,7 +175,20 @@ export class SessionWebSocket {
     return () => this.off('agent:activity', wrapped);
   }
 
-  /** agent:workflow_state — workflow state machine transition */
+  /** Generation-bound final assistant commit */
+  onFinalAssistantCommit(handler: (commit: import('../types').FinalAssistantCommit) => void): () => void {
+    const wrapped = (data: unknown) => {
+      const msg = data as { sessionId?: string; commit?: unknown };
+      if (!msg.commit || !msg.sessionId) return;
+      const normalized = normalizeFinalAssistantCommit(msg.commit, msg.sessionId);
+      if (!normalized) return;
+      handler(normalized);
+    };
+    this.on('agent:final_assistant_commit', wrapped);
+    return () => this.off('agent:final_assistant_commit', wrapped);
+  }
+
+
   onWorkflowState(
     handler: (data: { sessionId: string; previousState: string; newState: string; message: string }) => void
   ): () => void {

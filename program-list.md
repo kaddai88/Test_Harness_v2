@@ -116,7 +116,7 @@
                       - /url: javascript:;
                 - generic [ref=f4e142]:
                   - generic [ref=f4e143]:
-                    - heading "2026年09月08日" [level=4] [ref=f4e144]
+                    - heading "2026年09月07日" [level=4] [ref=f4e144]
                     - heading "admin，早上好！" [level=4] [ref=f4e145]
                     - generic [ref=f4e146]:
                       - generic [ref=f4e147]:
@@ -239,67 +239,52 @@
                         - /url: "###"
                       - link "" [ref=f4e309] [cursor=pointer]:
                         - /url: /zentao/project-index-57.html
-                    - listitem [ref=f4e311]:
-                      - link "测试项目-0907" [ref=f4e312] [cursor=pointer]:
-                        - /url: "###"
-                      - link "" [ref=f4e313] [cursor=pointer]:
-                        - /url: /zentao/project-index-64.html
-                    - listitem [ref=f4e315]:
-                      - link "确认测试项目-0907" [ref=f4e316] [cursor=pointer]:
-                        - /url: "###"
-                      - link "" [ref=f4e317] [cursor=pointer]:
-                        - /url: /zentao/project-index-67.html
-                    - listitem [ref=f4e319]:
-                      - link "CRUD确认测试项目-0907" [ref=f4e320] [cursor=pointer]:
-                        - /url: "###"
-                      - link "" [ref=f4e321] [cursor=pointer]:
-                        - /url: /zentao/project-index-68.html
                     - text: 
-                  - generic [ref=f4e326]:
-                    - generic [ref=f4e327]:
-                      - heading "需求数" [level=4] [ref=f4e329]
+                  - generic [ref=f4e314]:
+                    - generic [ref=f4e315]:
+                      - heading "需求数" [level=4] [ref=f4e317]
                       - generic:
-                        - generic [ref=f4e330]: 总需求：
-                        - generic [ref=f4e331]: "0"
+                        - generic [ref=f4e318]: 总需求：
+                        - generic [ref=f4e319]: "0"
                       - generic:
-                        - generic [ref=f4e332]: 已完成：
-                        - generic [ref=f4e333]: "0"
+                        - generic [ref=f4e320]: 已完成：
+                        - generic [ref=f4e321]: "0"
                       - generic:
-                        - generic [ref=f4e334]: 剩余：
-                        - generic [ref=f4e335]: "0"
-                    - generic [ref=f4e336]:
-                      - heading "投入" [level=4] [ref=f4e338]
+                        - generic [ref=f4e322]: 剩余：
+                        - generic [ref=f4e323]: "0"
+                    - generic [ref=f4e324]:
+                      - heading "投入" [level=4] [ref=f4e326]
                       - generic:
-                        - generic [ref=f4e339]: 总人数：
-                        - generic [ref=f4e340]: "1"
+                        - generic [ref=f4e327]: 总人数：
+                        - generic [ref=f4e328]: "1"
                       - generic:
-                        - generic [ref=f4e341]: 预计工时：
-                        - generic [ref=f4e342]: 0h
+                        - generic [ref=f4e329]: 预计工时：
+                        - generic [ref=f4e330]: 0h
                       - generic:
-                        - generic [ref=f4e343]: 已消耗：
-                        - generic [ref=f4e344]: 0h
-                    - generic [ref=f4e345]:
-                      - heading "任务数" [level=4] [ref=f4e347]
+                        - generic [ref=f4e331]: 已消耗：
+                        - generic [ref=f4e332]: 0h
+                    - generic [ref=f4e333]:
+                      - heading "任务数" [level=4] [ref=f4e335]
                       - generic:
-                        - generic [ref=f4e348]: 未开始：
-                        - generic [ref=f4e349]: "0"
+                        - generic [ref=f4e336]: 未开始：
+                        - generic [ref=f4e337]: "0"
                       - generic:
-                        - generic [ref=f4e350]: 进行中：
-                        - generic [ref=f4e351]: "0"
+                        - generic [ref=f4e338]: 进行中：
+                        - generic [ref=f4e339]: "0"
                       - generic:
-                        - generic [ref=f4e352]: 已完成：
-                        - generic [ref=f4e353]: "0"
-                    - generic [ref=f4e354]:
-                      - heading "Bug数" [level=4] [ref=f4e356]
+                        - generic [ref=f4e340]: 已完成：
+                        - generic [ref=f4e341]: "0"
+                    - generic [ref=f4e342]:
+                      - heading "Bug数" [level=4] [ref=f4e344]
                       - generic:
-                        - generic [ref=f4e357]: 总Bug：
-                        - generic [ref=f4e358]: "0"
+                        - generic [ref=f4e345]: 总Bug：
+                        - generic [ref=f4e346]: "0"
                       - generic:
-                        - generic [ref=f4e359]: 已解决：
-                        - generic [ref=f4e360]: "0"
+                        - generic [ref=f4e347]: 已解决：
+                        - generic [ref=f4e348]: "0"
                       - generic:
-                        - generic [ref=f4e361]: 未解决：
-                        - generic [ref=f4e362]: "0"
+                        - generic [ref=f4e349]: 未解决：
+                        - generic [ref=f4e350]: "0"
               - generic [ref=f4e75]:
                 - generic [ref=f4e76]:
                   - generic [ref=f4e77]: 我近期参与的项目
@@ -310,52 +295,21 @@
                     - listitem [ref=f4e81]:
                       - link "" [ref=f4e82] [cursor=pointer]:
                         - /url: javascript:;
-                - generic [ref=f4e364]:
-                  - generic [ref=f4e366] [cursor=pointer]:
-                    - generic [ref=f4e367]:
-                      - generic [ref=f4e368]: Scrum
-                      - strong [ref=f4e369]:
-                        - link "CRUD确认测试项目-0907" [ref=f4e370]:
-                          - /url: /zentao/project-index-68.html
-                      - navigation:
-                        - listitem:       
-                    - generic [ref=f4e372]:
-                      - generic [ref=f4e373]:
-                        - generic [ref=f4e374]: 
-                        - text: 1人
-                      - generic [ref=f4e375]:
-                        - generic [ref=f4e376]: 
-                        - text: 0 工时
-                  - generic [ref=f4e378] [cursor=pointer]:
-                    - generic [ref=f4e379]:
-                      - generic [ref=f4e380]: Scrum
-                      - strong [ref=f4e381]:
-                        - link "确认测试项目-0907" [ref=f4e382]:
-                          - /url: /zentao/project-index-67.html
-                      - navigation:
-                        - listitem:       
-                    - generic [ref=f4e384]:
-                      - generic [ref=f4e385]:
-                        - generic [ref=f4e386]: 
-                        - text: 1人
-                      - generic [ref=f4e387]:
-                        - generic [ref=f4e388]: 
-                        - text: 0 工时
-                  - generic [ref=f4e390] [cursor=pointer]:
-                    - generic [ref=f4e391]:
-                      - generic [ref=f4e392]: Scrum
-                      - strong [ref=f4e393]:
-                        - link "测试项目-0907" [ref=f4e394]:
-                          - /url: /zentao/project-index-64.html
-                      - navigation:
-                        - listitem:       
-                    - generic [ref=f4e396]:
-                      - generic [ref=f4e397]:
-                        - generic [ref=f4e398]: 
-                        - text: 1人
-                      - generic [ref=f4e399]:
-                        - generic [ref=f4e400]: 
-                        - text: 0 工时
+                - generic [ref=f4e354] [cursor=pointer]:
+                  - generic [ref=f4e355]:
+                    - generic [ref=f4e356]: Scrum
+                    - strong [ref=f4e357]:
+                      - link "自动化测试项目-20260612" [ref=f4e358]:
+                        - /url: /zentao/project-index-57.html
+                    - navigation:
+                      - listitem:       
+                  - generic [ref=f4e360]:
+                    - generic [ref=f4e361]:
+                      - generic [ref=f4e362]: 
+                      - text: 1人
+                    - generic [ref=f4e363]:
+                      - generic [ref=f4e364]: 
+                      - text: 0 工时
               - generic [ref=f4e85]:
                 - generic [ref=f4e86]:
                   - generic [ref=f4e87]: 我的待处理
@@ -363,28 +317,20 @@
                     - listitem [ref=f4e89]:
                       - link "" [ref=f4e90] [cursor=pointer]:
                         - /url: javascript:;
-                - generic [ref=f4e401]:
-                  - list [ref=f4e402]:
-                    - listitem [ref=f4e403]:
-                      - link "日程 0" [ref=f4e404] [cursor=pointer]:
+                - generic [ref=f4e365]:
+                  - list [ref=f4e366]:
+                    - listitem [ref=f4e367]:
+                      - link "日程 0" [ref=f4e368] [cursor=pointer]:
                         - /url: "#assigntomeTab-todo"
                         - text: 日程
-                        - generic [ref=f4e405]: "0"
-                  - generic [ref=f4e409]:
-                    - generic [ref=f4e410]:
-                      - button " 添加待办" [ref=f4e412] [cursor=pointer]:
-                        - generic [ref=f4e413]: 
+                        - generic [ref=f4e369]: "0"
+                  - generic [ref=f4e373]:
+                    - generic [ref=f4e374]:
+                      - button " 添加待办" [ref=f4e376] [cursor=pointer]:
+                        - generic [ref=f4e377]: 
                         - text: 添加待办
                       - option "暂时不设定时间"
-                      - option "09:00" [selected]
-                      - option "09:10"
-                      - option "09:20"
-                      - option "09:30"
-                      - option "09:40"
-                      - option "09:50"
-                      - option "10:00"
-                      - option "10:10"
-                      - option "10:20"
+                      - option "10:20" [selected]
                       - option "10:30"
                       - option "10:40"
                       - option "10:50"
@@ -468,10 +414,10 @@
                       - option "23:50"
                       - option "00:00"
                       - option "00:10"
-                      - option "00:20"
-                      - option "00:30"
-                      - option "00:40"
-                      - option "00:50"
+                      - option "05:20"
+                      - option "05:30"
+                      - option "05:40"
+                      - option "05:50"
                       - option "06:00"
                       - option "06:10"
                       - option "06:20"
@@ -493,7 +439,7 @@
                       - option "09:00"
                       - option "09:10"
                       - option "09:20"
-                      - option "09:30" [selected]
+                      - option "09:30"
                       - option "09:40"
                       - option "09:50"
                       - option "10:00"
@@ -501,7 +447,7 @@
                       - option "10:20"
                       - option "10:30"
                       - option "10:40"
-                      - option "10:50"
+                      - option "10:50" [selected]
                       - option "11:00"
                       - option "11:10"
                       - option "11:20"
@@ -582,10 +528,10 @@
                       - option "23:50"
                       - option "00:00"
                       - option "00:10"
-                      - option "00:20"
-                      - option "00:30"
-                      - option "00:40"
-                      - option "00:50"
+                      - option "05:20"
+                      - option "05:30"
+                      - option "05:40"
+                      - option "05:50"
                       - option "06:00"
                       - option "06:10"
                       - option "06:20"
@@ -604,7 +550,15 @@
                       - option "08:30"
                       - option "08:40"
                       - option "08:50"
-                    - list [ref=f4e415]
+                      - option "09:00"
+                      - option "09:10"
+                      - option "09:20"
+                      - option "09:30"
+                      - option "09:40"
+                      - option "09:50"
+                      - option "10:00"
+                      - option "10:10"
+                    - list [ref=f4e379]
               - generic [ref=f4e93]:
                 - generic [ref=f4e94]:
                   - generic [ref=f4e95]: 项目人力投入
@@ -612,25 +566,15 @@
                     - listitem [ref=f4e97]:
                       - link "" [ref=f4e98] [cursor=pointer]:
                         - /url: javascript:;
-                - generic [ref=f4e417]:
-                  - generic [ref=f4e418]:
-                    - generic "CRUD确认测试项目-0907" [ref=f4e419]
-                    - generic "确认测试项目-0907" [ref=f4e420]
-                    - generic "测试项目-0907" [ref=f4e421]
-                    - generic "自动化测试项目-20260612" [ref=f4e422]
-                  - generic [ref=f4e424]:
-                    - generic [ref=f4e425]:
-                      - generic [ref=f4e426]: 总人数
-                      - generic [ref=f4e427]: "1"
-                      - generic [ref=f4e431]: "1"
-                      - generic [ref=f4e435]: "1"
-                      - generic [ref=f4e439]: "1"
-                    - generic [ref=f4e443]:
-                      - generic [ref=f4e444]: 总计消耗
-                      - generic "0工时" [ref=f4e448]: 0h
-                      - generic "0工时" [ref=f4e452]: 0h
-                      - generic "0工时" [ref=f4e456]: 0h
-                      - generic "0工时" [ref=f4e460]: 0h
+                - generic [ref=f4e381]:
+                  - generic "自动化测试项目-20260612" [ref=f4e383]
+                  - generic [ref=f4e385]:
+                    - generic [ref=f4e386]:
+                      - generic [ref=f4e387]: 总人数
+                      - generic [ref=f4e388]: "1"
+                    - generic [ref=f4e392]:
+                      - generic [ref=f4e393]: 总计消耗
+                      - generic "0工时" [ref=f4e397]: 0h
               - generic [ref=f4e101]:
                 - generic [ref=f4e102]:
                   - generic [ref=f4e103]: 项目列表
@@ -641,76 +585,40 @@
                     - listitem [ref=f4e107]:
                       - link "" [ref=f4e108] [cursor=pointer]:
                         - /url: javascript:;
-                - grid [ref=f4e462]:
-                  - rowgroup [ref=f4e463]:
-                    - row [ref=f4e464]:
-                      - 'columnheader "项目名称: No sort applied, activate to apply an ascending sort" [ref=f4e465]':
-                        - generic [ref=f4e466] [cursor=pointer]: 项目名称
-                      - 'columnheader "负责人: No sort applied, activate to apply an ascending sort" [ref=f4e467]':
-                        - generic [ref=f4e468] [cursor=pointer]: 负责人
-                      - 'columnheader "状态: No sort applied, activate to apply an ascending sort" [ref=f4e469]':
-                        - generic [ref=f4e470] [cursor=pointer]: 状态
-                      - 'columnheader "人数: No sort applied, activate to apply an ascending sort" [ref=f4e471]':
-                        - generic [ref=f4e472] [cursor=pointer]: 人数
-                      - 'columnheader "总计消耗: No sort applied, activate to apply an ascending sort" [ref=f4e473]':
-                        - generic [ref=f4e474] [cursor=pointer]: 总计消耗
-                      - 'columnheader "预算: No sort applied, activate to apply an ascending sort" [ref=f4e475]':
-                        - generic [ref=f4e476] [cursor=pointer]: 预算
-                      - 'columnheader "剩余需求: No sort applied, activate to apply an ascending sort" [ref=f4e477]':
-                        - generic [ref=f4e478] [cursor=pointer]: 剩余需求
-                      - 'columnheader "剩余任务: No sort applied, activate to apply an ascending sort" [ref=f4e479]':
-                        - generic [ref=f4e480] [cursor=pointer]: 剩余任务
-                      - 'columnheader "剩余Bug: No sort applied, activate to apply an ascending sort" [ref=f4e481]':
-                        - generic [ref=f4e482] [cursor=pointer]: 剩余Bug
-                  - rowgroup [ref=f4e483]:
-                    - row [ref=f4e484]:
-                      - gridcell [ref=f4e485]:
-                        - link "CRUD确认测试项目-0907" [ref=f4e486] [cursor=pointer]:
-                          - /url: /zentao/project-index-68.html
-                      - gridcell [ref=f4e487]
-                      - gridcell "未开始" [ref=f4e488]
-                      - gridcell "1" [ref=f4e489]
-                      - gridcell "0h" [ref=f4e490]
-                      - gridcell "待定" [ref=f4e491]
-                      - gridcell "0" [ref=f4e492]
-                      - gridcell "0" [ref=f4e493]
-                      - gridcell "0" [ref=f4e494]
-                    - row [ref=f4e495]:
-                      - gridcell [ref=f4e496]:
-                        - link "确认测试项目-0907" [ref=f4e497] [cursor=pointer]:
-                          - /url: /zentao/project-index-67.html
-                      - gridcell [ref=f4e498]
-                      - gridcell "未开始" [ref=f4e499]
-                      - gridcell "1" [ref=f4e500]
-                      - gridcell "0h" [ref=f4e501]
-                      - gridcell "¥ 1万" [ref=f4e502]
-                      - gridcell "0" [ref=f4e503]
-                      - gridcell "0" [ref=f4e504]
-                      - gridcell "0" [ref=f4e505]
-                    - row [ref=f4e506]:
-                      - gridcell [ref=f4e507]:
-                        - link "测试项目-0907" [ref=f4e508] [cursor=pointer]:
-                          - /url: /zentao/project-index-64.html
-                      - gridcell [ref=f4e509]
-                      - gridcell "未开始" [ref=f4e510]
-                      - gridcell "1" [ref=f4e511]
-                      - gridcell "0h" [ref=f4e512]
-                      - gridcell "待定" [ref=f4e513]
-                      - gridcell "0" [ref=f4e514]
-                      - gridcell "0" [ref=f4e515]
-                      - gridcell "0" [ref=f4e516]
-                    - row [ref=f4e517]:
-                      - gridcell [ref=f4e518]:
-                        - link "自动化测试项目-20260612" [ref=f4e519] [cursor=pointer]:
+                - grid [ref=f4e399]:
+                  - rowgroup [ref=f4e400]:
+                    - row [ref=f4e401]:
+                      - 'columnheader "项目名称: No sort applied, activate to apply an ascending sort" [ref=f4e402]':
+                        - generic [ref=f4e403] [cursor=pointer]: 项目名称
+                      - 'columnheader "负责人: No sort applied, activate to apply an ascending sort" [ref=f4e404]':
+                        - generic [ref=f4e405] [cursor=pointer]: 负责人
+                      - 'columnheader "状态: No sort applied, activate to apply an ascending sort" [ref=f4e406]':
+                        - generic [ref=f4e407] [cursor=pointer]: 状态
+                      - 'columnheader "人数: No sort applied, activate to apply an ascending sort" [ref=f4e408]':
+                        - generic [ref=f4e409] [cursor=pointer]: 人数
+                      - 'columnheader "总计消耗: No sort applied, activate to apply an ascending sort" [ref=f4e410]':
+                        - generic [ref=f4e411] [cursor=pointer]: 总计消耗
+                      - 'columnheader "预算: No sort applied, activate to apply an ascending sort" [ref=f4e412]':
+                        - generic [ref=f4e413] [cursor=pointer]: 预算
+                      - 'columnheader "剩余需求: No sort applied, activate to apply an ascending sort" [ref=f4e414]':
+                        - generic [ref=f4e415] [cursor=pointer]: 剩余需求
+                      - 'columnheader "剩余任务: No sort applied, activate to apply an ascending sort" [ref=f4e416]':
+                        - generic [ref=f4e417] [cursor=pointer]: 剩余任务
+                      - 'columnheader "剩余Bug: No sort applied, activate to apply an ascending sort" [ref=f4e418]':
+                        - generic [ref=f4e419] [cursor=pointer]: 剩余Bug
+                  - rowgroup [ref=f4e420]:
+                    - row [ref=f4e421]:
+                      - gridcell [ref=f4e422]:
+                        - link "自动化测试项目-20260612" [ref=f4e423] [cursor=pointer]:
                           - /url: /zentao/project-index-57.html
-                      - gridcell [ref=f4e520]
-                      - gridcell "未开始" [ref=f4e521]
-                      - gridcell "1" [ref=f4e522]
-                      - gridcell "0h" [ref=f4e523]
-                      - gridcell "待定" [ref=f4e524]
-                      - gridcell "0" [ref=f4e525]
-                      - gridcell "0" [ref=f4e526]
-                      - gridcell "0" [ref=f4e527]
+                      - gridcell [ref=f4e424]
+                      - gridcell "未开始" [ref=f4e425]
+                      - gridcell "1" [ref=f4e426]
+                      - gridcell "0h" [ref=f4e427]
+                      - gridcell "待定" [ref=f4e428]
+                      - gridcell "0" [ref=f4e429]
+                      - gridcell "0" [ref=f4e430]
+                      - gridcell "0" [ref=f4e431]
             - generic [ref=f4e111]:
               - generic [ref=f4e112]:
                 - generic [ref=f4e113]:
@@ -722,13 +630,52 @@
                     - listitem [ref=f4e118]:
                       - link "" [ref=f4e119] [cursor=pointer]:
                         - /url: javascript:;
-                - list [ref=f4e529]:
-                  - listitem [ref=f4e530]:
-                    - generic [ref=f4e531]:
-                      - generic [ref=f4e532]: 9月08日 08:54
-                      - generic [ref=f4e533]:
+                - list [ref=f4e433]:
+                  - listitem [ref=f4e434]:
+                    - generic [ref=f4e435]:
+                      - generic [ref=f4e436]: 9月07日 10:10
+                      - generic [ref=f4e437]:
                         - text: admin登录系统
-                        - link [ref=f4e534] [cursor=pointer]:
+                        - link [ref=f4e438] [cursor=pointer]:
+                          - /url: /zentao/user-view-1.html
+                  - listitem [ref=f4e439]:
+                    - generic [ref=f4e440]:
+                      - generic [ref=f4e441]: 9月07日 09:57
+                      - generic "依赖测试项目集" [ref=f4e442]: admin删除了项目集 依赖测试项目集
+                  - listitem [ref=f4e443]:
+                    - generic [ref=f4e444]:
+                      - generic [ref=f4e445]: 9月07日 09:56
+                      - generic [ref=f4e446]:
+                        - text: admin编辑了项目集
+                        - link "完整测试项目集-已编辑" [ref=f4e447] [cursor=pointer]:
+                          - /url: /zentao/program-product-6.html
+                  - listitem [ref=f4e448]:
+                    - generic [ref=f4e449]:
+                      - generic [ref=f4e450]: 9月07日 09:53
+                      - generic [ref=f4e451]:
+                        - text: admin创建了项目集
+                        - link "自动化测试项目集-20260907" [ref=f4e452] [cursor=pointer]:
+                          - /url: /zentao/program-product-61.html
+                  - listitem [ref=f4e453]:
+                    - generic [ref=f4e454]:
+                      - generic [ref=f4e455]: 9月07日 09:52
+                      - generic [ref=f4e456]:
+                        - text: admin登录系统
+                        - link [ref=f4e457] [cursor=pointer]:
+                          - /url: /zentao/user-view-1.html
+                  - listitem [ref=f4e458]:
+                    - generic [ref=f4e459]:
+                      - generic [ref=f4e460]: 9月07日 09:24
+                      - generic [ref=f4e461]:
+                        - text: admin创建了项目集
+                        - link "全量测试项目集-自动化" [ref=f4e462] [cursor=pointer]:
+                          - /url: /zentao/program-product-60.html
+                  - listitem [ref=f4e463]:
+                    - generic [ref=f4e464]:
+                      - generic [ref=f4e465]: 9月07日 09:22
+                      - generic [ref=f4e466]:
+                        - text: admin登录系统
+                        - link [ref=f4e467] [cursor=pointer]:
                           - /url: /zentao/user-view-1.html
               - generic [ref=f4e122]:
                 - generic [ref=f4e123]:
@@ -740,21 +687,13 @@
                     - listitem [ref=f4e128]:
                       - link "" [ref=f4e129] [cursor=pointer]:
                         - /url: javascript:;
-                - generic [ref=f4e536]:
-                  - generic [ref=f4e537]:
-                    - button " 添加待办" [ref=f4e539] [cursor=pointer]:
-                      - generic [ref=f4e540]: 
+                - generic [ref=f4e469]:
+                  - generic [ref=f4e470]:
+                    - button " 添加待办" [ref=f4e472] [cursor=pointer]:
+                      - generic [ref=f4e473]: 
                       - text: 添加待办
                     - option "暂时不设定时间"
-                    - option "09:00" [selected]
-                    - option "09:10"
-                    - option "09:20"
-                    - option "09:30"
-                    - option "09:40"
-                    - option "09:50"
-                    - option "10:00"
-                    - option "10:10"
-                    - option "10:20"
+                    - option "10:20" [selected]
                     - option "10:30"
                     - option "10:40"
                     - option "10:50"
@@ -838,10 +777,10 @@
                     - option "23:50"
                     - option "00:00"
                     - option "00:10"
-                    - option "00:20"
-                    - option "00:30"
-                    - option "00:40"
-                    - option "00:50"
+                    - option "05:20"
+                    - option "05:30"
+                    - option "05:40"
+                    - option "05:50"
                     - option "06:00"
                     - option "06:10"
                     - option "06:20"
@@ -863,7 +802,7 @@
                     - option "09:00"
                     - option "09:10"
                     - option "09:20"
-                    - option "09:30" [selected]
+                    - option "09:30"
                     - option "09:40"
                     - option "09:50"
                     - option "10:00"
@@ -871,7 +810,7 @@
                     - option "10:20"
                     - option "10:30"
                     - option "10:40"
-                    - option "10:50"
+                    - option "10:50" [selected]
                     - option "11:00"
                     - option "11:10"
                     - option "11:20"
@@ -952,10 +891,10 @@
                     - option "23:50"
                     - option "00:00"
                     - option "00:10"
-                    - option "00:20"
-                    - option "00:30"
-                    - option "00:40"
-                    - option "00:50"
+                    - option "05:20"
+                    - option "05:30"
+                    - option "05:40"
+                    - option "05:50"
                     - option "06:00"
                     - option "06:10"
                     - option "06:20"
@@ -974,7 +913,15 @@
                     - option "08:30"
                     - option "08:40"
                     - option "08:50"
-                  - list [ref=f4e542]
+                    - option "09:00"
+                    - option "09:10"
+                    - option "09:20"
+                    - option "09:30"
+                    - option "09:40"
+                    - option "09:50"
+                    - option "10:00"
+                    - option "10:10"
+                  - list [ref=f4e475]
               - generic [ref=f4e132]:
                 - generic [ref=f4e133]:
                   - generic [ref=f4e134]: 我的贡献
@@ -982,31 +929,31 @@
                     - listitem [ref=f4e136]:
                       - link "" [ref=f4e137] [cursor=pointer]:
                         - /url: javascript:;
-                - generic [ref=f4e546]:
-                  - generic [ref=f4e547]:
-                    - generic [ref=f4e548]: 创建的待办数
-                    - generic [ref=f4e549]: "0"
-                  - generic [ref=f4e550]:
-                    - generic [ref=f4e551]: 创建的用户需求数
-                    - generic [ref=f4e552]: "0"
-                  - generic [ref=f4e553]:
-                    - generic [ref=f4e554]: 创建的研发需求数
-                    - generic [ref=f4e555]: "0"
-                  - generic [ref=f4e556]:
-                    - generic [ref=f4e557]: 完成的任务数
-                    - generic [ref=f4e558]: "0"
-                  - generic [ref=f4e559]:
-                    - generic [ref=f4e560]: 提交的Bug数
-                    - generic [ref=f4e561]: "0"
-                  - generic [ref=f4e562]:
-                    - generic [ref=f4e563]: 解决的Bug数
-                    - generic [ref=f4e564]: "0"
-                  - generic [ref=f4e565]:
-                    - generic [ref=f4e566]: 创建的用例数
-                    - generic [ref=f4e567]: "0"
-                  - generic [ref=f4e568]:
-                    - generic [ref=f4e569]: 创建的文档数
-                    - generic [ref=f4e570]: "0"
+                - generic [ref=f4e479]:
+                  - generic [ref=f4e480]:
+                    - generic [ref=f4e481]: 创建的待办数
+                    - generic [ref=f4e482]: "0"
+                  - generic [ref=f4e483]:
+                    - generic [ref=f4e484]: 创建的用户需求数
+                    - generic [ref=f4e485]: "0"
+                  - generic [ref=f4e486]:
+                    - generic [ref=f4e487]: 创建的研发需求数
+                    - generic [ref=f4e488]: "0"
+                  - generic [ref=f4e489]:
+                    - generic [ref=f4e490]: 完成的任务数
+                    - generic [ref=f4e491]: "0"
+                  - generic [ref=f4e492]:
+                    - generic [ref=f4e493]: 提交的Bug数
+                    - generic [ref=f4e494]: "0"
+                  - generic [ref=f4e495]:
+                    - generic [ref=f4e496]: 解决的Bug数
+                    - generic [ref=f4e497]: "0"
+                  - generic [ref=f4e498]:
+                    - generic [ref=f4e499]: 创建的用例数
+                    - generic [ref=f4e500]: "0"
+                  - generic [ref=f4e501]:
+                    - generic [ref=f4e502]: 创建的文档数
+                    - generic [ref=f4e503]: "0"
     - iframe [ref=f1e124]:
       - generic [ref=f6e1]:
         - banner [ref=f6e2]:
@@ -1250,116 +1197,248 @@
                       - link "" [ref=f6e227]:
                         - /url: /zentao/program-delete-23.html
                   - row [ref=f6e229]:
-                    - cell "  重测-三级子集-mp0nzfs3" [ref=f6e230]:
+                    - cell "  重测-待删除父级-mp0nzfs3" [ref=f6e230]:
                       - generic [ref=f6e231]: 
                       - generic [ref=f6e232]: 
-                      - link "重测-三级子集-mp0nzfs3" [ref=f6e233]:
-                        - /url: /zentao/program-product-28.html
+                      - link "重测-待删除父级-mp0nzfs3" [ref=f6e233]:
+                        - /url: /zentao/program-product-25.html
                     - cell "未开始" [ref=f6e234]
                     - cell "A admin" [ref=f6e235]:
                       - generic [ref=f6e236]: A
                       - link "admin" [ref=f6e238]:
                         - /url: /zentao/user-profile-1.html?onlybody=yes
-                    - cell "¥ 10万" [ref=f6e239]
+                    - cell "¥ 5万" [ref=f6e239]
                     - cell "2026-01-01" [ref=f6e240]
                     - cell "2027-12-31" [ref=f6e241]
                     - cell "0" [ref=f6e242]
                     - cell [ref=f6e245]:
                       - link "" [ref=f6e246]:
-                        - /url: /zentao/program-start-28.html?onlybody=yes
+                        - /url: /zentao/program-start-25.html?onlybody=yes
                       - generic [ref=f6e248]:
                         - button "" [ref=f6e249]
                         - text:   
                       - link "" [ref=f6e250]:
-                        - /url: /zentao/program-edit-28.html
+                        - /url: /zentao/program-edit-25.html
                       - link "" [ref=f6e252]:
-                        - /url: /zentao/program-create-28.html
+                        - /url: /zentao/program-create-25.html
                       - link "" [ref=f6e254]:
-                        - /url: /zentao/program-delete-28.html
+                        - /url: /zentao/program-delete-25.html
                   - row [ref=f6e256]:
-                    - cell "  专业测试-三级子集A1-1" [ref=f6e257]:
+                    - cell "  重测-三级子集-mp0nzfs3" [ref=f6e257]:
                       - generic [ref=f6e258]: 
                       - generic [ref=f6e259]: 
-                      - link "专业测试-三级子集A1-1" [ref=f6e260]:
-                        - /url: /zentao/program-product-36.html
+                      - link "重测-三级子集-mp0nzfs3" [ref=f6e260]:
+                        - /url: /zentao/program-product-28.html
                     - cell "未开始" [ref=f6e261]
                     - cell "A admin" [ref=f6e262]:
                       - generic [ref=f6e263]: A
                       - link "admin" [ref=f6e265]:
                         - /url: /zentao/user-profile-1.html?onlybody=yes
                     - cell "¥ 10万" [ref=f6e266]
-                    - cell "2026-05-01" [ref=f6e267]
-                    - cell "2026-10-31" [ref=f6e268]
+                    - cell "2026-01-01" [ref=f6e267]
+                    - cell "2027-12-31" [ref=f6e268]
                     - cell "0" [ref=f6e269]
                     - cell [ref=f6e272]:
                       - link "" [ref=f6e273]:
-                        - /url: /zentao/program-start-36.html?onlybody=yes
+                        - /url: /zentao/program-start-28.html?onlybody=yes
                       - generic [ref=f6e275]:
                         - button "" [ref=f6e276]
                         - text:   
                       - link "" [ref=f6e277]:
-                        - /url: /zentao/program-edit-36.html
+                        - /url: /zentao/program-edit-28.html
                       - link "" [ref=f6e279]:
-                        - /url: /zentao/program-create-36.html
+                        - /url: /zentao/program-create-28.html
                       - link "" [ref=f6e281]:
-                        - /url: /zentao/program-delete-36.html
+                        - /url: /zentao/program-delete-28.html
                   - row [ref=f6e283]:
-                    - cell "  重测-层级三级" [ref=f6e284]:
+                    - cell "  测试负数预算" [ref=f6e284]:
                       - generic [ref=f6e285]: 
                       - generic [ref=f6e286]: 
-                      - link "重测-层级三级" [ref=f6e287]:
-                        - /url: /zentao/program-product-45.html
+                      - link "测试负数预算" [ref=f6e287]:
+                        - /url: /zentao/program-product-29.html
                     - cell "未开始" [ref=f6e288]
-                    - cell "A admin" [ref=f6e289]:
-                      - generic [ref=f6e290]: A
-                      - link "admin" [ref=f6e292]:
-                        - /url: /zentao/user-profile-1.html?onlybody=yes
-                    - cell "¥ 10万" [ref=f6e293]
-                    - cell "2026-01-01" [ref=f6e294]
-                    - cell "2027-12-31" [ref=f6e295]
-                    - cell "0" [ref=f6e296]
-                    - cell [ref=f6e299]:
-                      - link "" [ref=f6e300]:
-                        - /url: /zentao/program-start-45.html?onlybody=yes
-                      - generic [ref=f6e302]:
-                        - button "" [ref=f6e303]
+                    - cell [ref=f6e289]
+                    - cell "¥ -100" [ref=f6e290]
+                    - cell "2026-01-01" [ref=f6e291]
+                    - cell "2026-12-31" [ref=f6e292]
+                    - cell "0" [ref=f6e293]
+                    - cell [ref=f6e296]:
+                      - link "" [ref=f6e297]:
+                        - /url: /zentao/program-start-29.html?onlybody=yes
+                      - generic [ref=f6e299]:
+                        - button "" [ref=f6e300]
                         - text:   
-                      - link "" [ref=f6e304]:
+                      - link "" [ref=f6e301]:
+                        - /url: /zentao/program-edit-29.html
+                      - link "" [ref=f6e303]:
+                        - /url: /zentao/program-create-29.html
+                      - link "" [ref=f6e305]:
+                        - /url: /zentao/program-delete-29.html
+                  - row [ref=f6e307]:
+                    - cell "  专业测试-公开集" [ref=f6e308]:
+                      - generic [ref=f6e309]: 
+                      - generic [ref=f6e310]: 
+                      - link "专业测试-公开集" [ref=f6e311]:
+                        - /url: /zentao/program-product-30.html
+                    - cell "未开始" [ref=f6e312]
+                    - cell "A admin" [ref=f6e313]:
+                      - generic [ref=f6e314]: A
+                      - link "admin" [ref=f6e316]:
+                        - /url: /zentao/user-profile-1.html?onlybody=yes
+                    - cell "¥ 10万" [ref=f6e317]
+                    - cell "2026-01-01" [ref=f6e318]
+                    - cell "2027-12-31" [ref=f6e319]
+                    - cell "0" [ref=f6e320]
+                    - cell [ref=f6e323]:
+                      - link "" [ref=f6e324]:
+                        - /url: /zentao/program-start-30.html?onlybody=yes
+                      - generic [ref=f6e326]:
+                        - button "" [ref=f6e327]
+                        - text:   
+                      - link "" [ref=f6e328]:
+                        - /url: /zentao/program-edit-30.html
+                      - link "" [ref=f6e330]:
+                        - /url: /zentao/program-create-30.html
+                      - link "" [ref=f6e332]:
+                        - /url: /zentao/program-delete-30.html
+                  - row [ref=f6e334]:
+                    - cell "  专业测试-私有集" [ref=f6e335]:
+                      - generic [ref=f6e336]: 
+                      - generic [ref=f6e337]: 
+                      - link "专业测试-私有集" [ref=f6e338]:
+                        - /url: /zentao/program-product-31.html
+                    - cell "未开始" [ref=f6e339]
+                    - cell "A admin" [ref=f6e340]:
+                      - generic [ref=f6e341]: A
+                      - link "admin" [ref=f6e343]:
+                        - /url: /zentao/user-profile-1.html?onlybody=yes
+                    - cell "¥ 10万" [ref=f6e344]
+                    - cell "2026-01-01" [ref=f6e345]
+                    - cell "2027-12-31" [ref=f6e346]
+                    - cell "0" [ref=f6e347]
+                    - cell [ref=f6e350]:
+                      - link "" [ref=f6e351]:
+                        - /url: /zentao/program-start-31.html?onlybody=yes
+                      - generic [ref=f6e353]:
+                        - button "" [ref=f6e354]
+                        - text:   
+                      - link "" [ref=f6e355]:
+                        - /url: /zentao/program-edit-31.html
+                      - link "" [ref=f6e357]:
+                        - /url: /zentao/program-create-31.html
+                      - link "" [ref=f6e359]:
+                        - /url: /zentao/program-delete-31.html
+                  - row [ref=f6e361]:
+                    - cell "  专业测试-待定预算" [ref=f6e362]:
+                      - generic [ref=f6e363]: 
+                      - generic [ref=f6e364]: 
+                      - link "专业测试-待定预算" [ref=f6e365]:
+                        - /url: /zentao/program-product-32.html
+                    - cell "未开始" [ref=f6e366]
+                    - cell "A admin" [ref=f6e367]:
+                      - generic [ref=f6e368]: A
+                      - link "admin" [ref=f6e370]:
+                        - /url: /zentao/user-profile-1.html?onlybody=yes
+                    - cell "待定" [ref=f6e371]
+                    - cell "2026-01-01" [ref=f6e372]
+                    - cell "2026-12-31" [ref=f6e373]
+                    - cell "0" [ref=f6e374]
+                    - cell [ref=f6e377]:
+                      - link "" [ref=f6e378]:
+                        - /url: /zentao/program-start-32.html?onlybody=yes
+                      - generic [ref=f6e380]:
+                        - button "" [ref=f6e381]
+                        - text:   
+                      - link "" [ref=f6e382]:
+                        - /url: /zentao/program-edit-32.html
+                      - link "" [ref=f6e384]:
+                        - /url: /zentao/program-create-32.html
+                      - link "" [ref=f6e386]:
+                        - /url: /zentao/program-delete-32.html
+                  - row [ref=f6e388]:
+                    - cell "  专业测试-三级子集A1-1" [ref=f6e389]:
+                      - generic [ref=f6e390]: 
+                      - generic [ref=f6e391]: 
+                      - link "专业测试-三级子集A1-1" [ref=f6e392]:
+                        - /url: /zentao/program-product-36.html
+                    - cell "未开始" [ref=f6e393]
+                    - cell "A admin" [ref=f6e394]:
+                      - generic [ref=f6e395]: A
+                      - link "admin" [ref=f6e397]:
+                        - /url: /zentao/user-profile-1.html?onlybody=yes
+                    - cell "¥ 10万" [ref=f6e398]
+                    - cell "2026-05-01" [ref=f6e399]
+                    - cell "2026-10-31" [ref=f6e400]
+                    - cell "0" [ref=f6e401]
+                    - cell [ref=f6e404]:
+                      - link "" [ref=f6e405]:
+                        - /url: /zentao/program-start-36.html?onlybody=yes
+                      - generic [ref=f6e407]:
+                        - button "" [ref=f6e408]
+                        - text:   
+                      - link "" [ref=f6e409]:
+                        - /url: /zentao/program-edit-36.html
+                      - link "" [ref=f6e411]:
+                        - /url: /zentao/program-create-36.html
+                      - link "" [ref=f6e413]:
+                        - /url: /zentao/program-delete-36.html
+                  - row [ref=f6e415]:
+                    - cell "  重测-层级三级" [ref=f6e416]:
+                      - generic [ref=f6e417]: 
+                      - generic [ref=f6e418]: 
+                      - link "重测-层级三级" [ref=f6e419]:
+                        - /url: /zentao/program-product-45.html
+                    - cell "未开始" [ref=f6e420]
+                    - cell "A admin" [ref=f6e421]:
+                      - generic [ref=f6e422]: A
+                      - link "admin" [ref=f6e424]:
+                        - /url: /zentao/user-profile-1.html?onlybody=yes
+                    - cell "¥ 10万" [ref=f6e425]
+                    - cell "2026-01-01" [ref=f6e426]
+                    - cell "2027-12-31" [ref=f6e427]
+                    - cell "0" [ref=f6e428]
+                    - cell [ref=f6e431]:
+                      - link "" [ref=f6e432]:
+                        - /url: /zentao/program-start-45.html?onlybody=yes
+                      - generic [ref=f6e434]:
+                        - button "" [ref=f6e435]
+                        - text:   
+                      - link "" [ref=f6e436]:
                         - /url: /zentao/program-edit-45.html
-                      - link "" [ref=f6e306]:
+                      - link "" [ref=f6e438]:
                         - /url: /zentao/program-create-45.html
-                      - link "" [ref=f6e308]:
+                      - link "" [ref=f6e440]:
                         - /url: /zentao/program-delete-45.html
-              - generic [ref=f6e310]:
-                - generic [ref=f6e311]: 本页共 5 个顶级项目集，0 个独立项目。
-                - list [ref=f6e312]:
+              - generic [ref=f6e442]:
+                - generic [ref=f6e443]: 本页共 10 个顶级项目集，0 个独立项目。
+                - list [ref=f6e444]:
                   - listitem:
-                    - generic [ref=f6e313]:
+                    - generic [ref=f6e445]:
                       - text: 共
-                      - strong [ref=f6e314]: "32"
+                      - strong [ref=f6e446]: "29"
                       - text: 项
                   - listitem:
-                    - button [ref=f6e316] [cursor=pointer]:
+                    - button [ref=f6e448] [cursor=pointer]:
                       - text: 每页
-                      - strong [ref=f6e317]: "5"
+                      - strong [ref=f6e449]: "10"
                       - text: 项
                   - listitem:
                     - link "":
-                      - /url: /zentao/program-browse-unclosed-order_asc-32-5-1-0.html
+                      - /url: /zentao/program-browse-unclosed-order_asc-29-10-1-0.html
                   - listitem:
                     - link "":
                       - /url: "###"
                   - listitem:
-                    - generic [ref=f6e319]:
-                      - strong [ref=f6e320]: "1"
+                    - generic [ref=f6e451]:
+                      - strong [ref=f6e452]: "1"
                       - text: /
-                      - strong [ref=f6e321]: "7"
+                      - strong [ref=f6e453]: "3"
                   - listitem:
-                    - link "" [ref=f6e322] [cursor=pointer]:
-                      - /url: /zentao/program-browse-unclosed-order_asc-32-5-2-0.html
+                    - link "" [ref=f6e454] [cursor=pointer]:
+                      - /url: /zentao/program-browse-unclosed-order_asc-29-10-2-0.html
                   - listitem:
-                    - link "" [ref=f6e324] [cursor=pointer]:
-                      - /url: /zentao/program-browse-unclosed-order_asc-32-5-7-0.html
+                    - link "" [ref=f6e456] [cursor=pointer]:
+                      - /url: /zentao/program-browse-unclosed-order_asc-29-10-3-0.html
   - generic [ref=f1e50]:
     - list [ref=f1e51]:
       - listitem [ref=f1e52]:
@@ -1367,18 +1446,67 @@
       - listitem [ref=f1e125]
       - listitem [ref=f1e126]:
         - generic [ref=f1e127] [cursor=pointer]: 项目集
-    - generic [ref=f1e55]:
-      - link "企业版 " [ref=f1e56] [cursor=pointer]:
-        - /url: javascript:void(0)
-        - text: 企业版
-        - generic [ref=f1e57]: 
-      - link " 开源版18.9" [ref=f1e58] [cursor=pointer]:
-        - /url: https://www.zentao.net
-        - generic [ref=f1e59]: 
-        - text: 开源版18.9
-      - link [ref=f1e60] [cursor=pointer]:
-        - /url: javascript:void(0)
-      - generic [ref=f1e67]:
-        - generic: 
-        - searchbox "请输入" [ref=f1e68]
-        - button "" [ref=f1e70] [cursor=pointer]
+    - generic [ref=f1e54]:
+      - generic [ref=f1e55]:
+        - link "企业版 " [ref=f1e56] [cursor=pointer]:
+          - /url: javascript:void(0)
+          - text: 企业版
+          - generic [ref=f1e57]: 
+        - link " 开源版18.9" [ref=f1e58] [cursor=pointer]:
+          - /url: https://www.zentao.net
+          - generic [ref=f1e59]: 
+          - text: 开源版18.9
+        - link [ref=f1e60] [cursor=pointer]:
+          - /url: javascript:void(0)
+        - generic [ref=f1e67]:
+          - generic: 
+          - searchbox "请输入" [ref=f1e68]
+          - button "" [ref=f1e70] [cursor=pointer]
+      - generic [ref=f1e72]:
+        - heading "可升级版本" [level=2] [ref=f1e75]
+        - generic [ref=f1e77]:
+          - generic [ref=f1e78]:
+            - heading "安全补丁 18.13.1" [level=4] [ref=f1e81]
+            - generic [ref=f1e82]:
+              - button "×" [ref=f1e83] [cursor=pointer]
+              - paragraph [ref=f1e84]: 近期网络攻击事件频发，针对此情况禅道发布安全补丁 18.13.1，该补丁适用于您的版本。下载补丁后使用管理员账号登录禅道，进入 后台 => 插件管理页面安装。
+              - paragraph [ref=f1e85]:
+                - link "下载补丁" [ref=f1e86] [cursor=pointer]:
+                  - /url: https://www.zentao.net/extension-buyext-1447-download.html
+                - link "不再提醒" [ref=f1e87] [cursor=pointer]:
+                  - /url: javascript:;
+          - separator [ref=f1e88]
+          - generic [ref=f1e89]:
+            - heading "禅道IPD版5.5" [level=4] [ref=f1e92]
+            - generic [ref=f1e93]: 禅道IPD版5.5发布，AI现已支持在对话中实时访问和操作禅道数据，新增AI Skills管理，禅道智能体配置能力增强
+            - generic [ref=f1e94]:
+              - link "查看版本更新日志 >" [ref=f1e95] [cursor=pointer]:
+                - /url: /zentao/index-changeLog-ipd5.5.html
+              - link "现在升级" [ref=f1e96] [cursor=pointer]:
+                - /url: https://www.zentao.net/download/ipd5.5-86525.html
+          - separator [ref=f1e97]
+          - generic [ref=f1e98]:
+            - heading "禅道旗舰版8.5" [level=4] [ref=f1e101]
+            - generic [ref=f1e102]: 禅道旗舰版8.5发布，AI现已支持在对话中实时访问和操作禅道数据，新增AI Skills管理，禅道智能体配置能力增强
+            - generic [ref=f1e103]:
+              - link "查看版本更新日志 >" [ref=f1e104] [cursor=pointer]:
+                - /url: /zentao/index-changeLog-max8.5.html
+              - link "现在升级" [ref=f1e105] [cursor=pointer]:
+                - /url: https://www.zentao.net/download/max8.5-86524.html
+          - separator [ref=f1e106]
+          - generic [ref=f1e107]:
+            - heading "禅道企业版13.5" [level=4] [ref=f1e110]
+            - generic [ref=f1e111]: 禅道企业版13.5发布，AI支持在对话中实时访问和操作禅道数据，新增AI Skills管理，禅道智能体配置能力增强
+            - generic [ref=f1e112]:
+              - link "查看版本更新日志 >" [ref=f1e113] [cursor=pointer]:
+                - /url: /zentao/index-changeLog-biz13.5.html
+              - link "现在升级" [ref=f1e114] [cursor=pointer]:
+                - /url: https://www.zentao.net/download/biz13.5-86523.html
+          - separator [ref=f1e115]
+          - generic [ref=f1e116]:
+            - heading "开源版-20" [level=4] [ref=f1e119]
+            - generic [ref=f1e120]:
+              - link "查看版本更新日志 >" [ref=f1e121] [cursor=pointer]:
+                - /url: /zentao/index-changeLog-22.5.html
+              - link "现在升级" [ref=f1e122] [cursor=pointer]:
+                - /url: https://www.zentao.net/download/pms22.5-86522.html

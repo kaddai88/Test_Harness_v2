@@ -6,6 +6,7 @@ import type {
   Message,
   SessionConfig,
   SessionTarget,
+  SessionStatusReason,
 } from "@test-harness/th-protocol";
 import type { THContainer, EventBusImpl } from "@test-harness/th-core";
 import type { ToolRegistry } from "@test-harness/th-tools";
@@ -59,6 +60,7 @@ export interface AgentResult {
   sessionId: string;
   status: "completed" | "failed" | "cancelled" | "timeout";
   turns: number;
+  reason: SessionStatusReason;
   summary?: string;
   error?: Error;
 }
@@ -67,6 +69,8 @@ export interface AgentResult {
 export interface TurnResult {
   /** Whether the agent loop should stop (no tool calls = done) */
   complete: boolean;
+  aborted?: boolean;
+  abortReason?: import("@test-harness/th-protocol").AbortReason;
   /** The model response for this turn */
   response: {
     content: string;
@@ -83,5 +87,7 @@ export interface TurnResult {
     success: boolean;
     data?: unknown;
     error?: string;
+    aborted?: boolean;
+    abortReason?: import("@test-harness/th-protocol").AbortReason;
   }>;
 }

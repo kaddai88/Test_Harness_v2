@@ -1,0 +1,431 @@
+- generic [active]:
+  - generic [ref=f44e1]:
+    - navigation [ref=f44e2]:
+      - list [ref=f44e3]:
+        - listitem [ref=f44e4]:
+          - generic [ref=f44e5] [cursor=pointer]:
+            - generic [ref=f44e6]: 
+            - text: 地盘
+        - listitem [ref=f44e7]:
+          - generic [ref=f44e8] [cursor=pointer]:
+            - generic [ref=f44e9]: 
+            - text: 项目集
+        - listitem [ref=f44e10]:
+          - generic [ref=f44e11] [cursor=pointer]:
+            - generic [ref=f44e12]: 
+            - text: 产品
+        - listitem [ref=f44e13]:
+          - generic [ref=f44e14] [cursor=pointer]:
+            - generic [ref=f44e15]: 
+            - text: 项目
+        - listitem [ref=f44e16]:
+          - generic [ref=f44e17] [cursor=pointer]:
+            - generic [ref=f44e18]: 
+            - text: 执行
+        - listitem [ref=f44e19]:
+          - generic [ref=f44e20] [cursor=pointer]:
+            - generic [ref=f44e21]: 
+            - text: 测试
+        - listitem [ref=f44e22]:
+          - generic [ref=f44e23] [cursor=pointer]:
+            - generic [ref=f44e24]: 
+            - text: DevOps
+        - listitem [ref=f44e25]
+        - listitem [ref=f44e26]:
+          - generic [ref=f44e27] [cursor=pointer]:
+            - generic [ref=f44e28]: 
+            - text: 看板
+        - listitem [ref=f44e29]:
+          - generic [ref=f44e30] [cursor=pointer]:
+            - generic [ref=f44e31]: 
+            - text: 文档
+        - listitem [ref=f44e32]:
+          - generic [ref=f44e33] [cursor=pointer]:
+            - generic [ref=f44e34]: 
+            - text: BI
+        - listitem [ref=f44e35]:
+          - generic [ref=f44e36] [cursor=pointer]:
+            - generic [ref=f44e37]: 
+            - text: 组织
+        - listitem [ref=f44e38]
+        - listitem [ref=f44e39]:
+          - generic [ref=f44e40] [cursor=pointer]:
+            - generic [ref=f44e41]: 
+            - text: 后台
+      - text: 
+    - generic:  
+    - list [ref=f44e43]:
+      - listitem [ref=f44e44]:
+        - generic [ref=f44e45] [cursor=pointer]: 
+  - iframe [ref=f44e49]:
+    - generic [ref=f47e1]:
+      - banner [ref=f47e2]:
+        - generic [ref=f47e4]:
+          - link " 项目集" [ref=f47e7] [cursor=pointer]:
+            - /url: /zentao/program-browse.html
+            - generic [ref=f47e8]: 
+            - text: 项目集
+          - navigation [ref=f47e9]:
+            - list [ref=f47e10]:
+              - listitem [ref=f47e11]:
+                - link "项目集列表" [ref=f47e12] [cursor=pointer]:
+                  - /url: /zentao/program-browse.html
+              - listitem [ref=f47e13]:
+                - link "项目集看板" [ref=f47e14] [cursor=pointer]:
+                  - /url: /zentao/program-kanban.html
+          - list [ref=f47e17]:
+            - listitem [ref=f47e18]:
+              - text:            
+              - generic [ref=f47e19] [cursor=pointer]: 
+            - listitem [ref=f47e21]:
+              - text:             
+              - generic [ref=f47e22] [cursor=pointer]: A
+            - listitem [ref=f47e25]:
+              - generic [ref=f47e26] [cursor=pointer]: 综合研发界面
+      - main [ref=f47e28]:
+        - generic [ref=f47e29]:
+          - generic [ref=f47e30]:
+            - generic [ref=f47e31]:
+              - link "全部" [ref=f47e32] [cursor=pointer]:
+                - /url: /zentao/program-browse-all-order_asc.html
+              - link "未关闭" [ref=f47e33] [cursor=pointer]:
+                - /url: /zentao/program-browse-unclosed-order_asc.html
+              - link "未开始" [ref=f47e35] [cursor=pointer]:
+                - /url: /zentao/program-browse-wait-order_asc.html
+              - link "进行中" [ref=f47e36] [cursor=pointer]:
+                - /url: /zentao/program-browse-doing-order_asc.html
+              - link "已挂起" [ref=f47e37] [cursor=pointer]:
+                - /url: /zentao/program-browse-suspended-order_asc.html
+              - link "已关闭" [ref=f47e38] [cursor=pointer]:
+                - /url: /zentao/program-browse-closed-order_asc.html
+              - generic [ref=f47e39] [cursor=pointer]:
+                - generic [ref=f47e40]: 
+                - text: 搜索
+            - generic [ref=f47e41]:
+              - link " 创建项目" [ref=f47e42] [cursor=pointer]:
+                - /url: /zentao/project-createGuide-0-PGM.html
+                - generic [ref=f47e43]: 
+                - text: 创建项目
+              - link " 添加项目集" [ref=f47e44] [cursor=pointer]:
+                - /url: /zentao/program-create.html
+                - generic [ref=f47e45]: 
+                - text: 添加项目集
+          - generic [ref=f47e48]:
+            - table [ref=f47e49] [cursor=pointer]:
+              - rowgroup [ref=f47e50]:
+                - row [ref=f47e51]:
+                  - columnheader "名称 " [ref=f47e52]:
+                    - text: 名称
+                    - generic "展开全部" [ref=f47e53]: 
+                  - columnheader [ref=f47e54]:
+                    - link " 状态 " [ref=f47e55]:
+                      - /url: /zentao/program-browse-unclosed-status_asc.html
+                  - columnheader [ref=f47e56]:
+                    - link " 负责人 " [ref=f47e57]:
+                      - /url: /zentao/program-browse-unclosed-PM_asc.html
+                  - columnheader [ref=f47e58]:
+                    - link " 预算 " [ref=f47e59]:
+                      - /url: /zentao/program-browse-unclosed-budget_asc.html
+                  - columnheader [ref=f47e60]:
+                    - link " 计划开始 " [ref=f47e61]:
+                      - /url: /zentao/program-browse-unclosed-begin_asc.html
+                  - columnheader [ref=f47e62]:
+                    - link " 计划完成 " [ref=f47e63]:
+                      - /url: /zentao/program-browse-unclosed-end_asc.html
+                  - columnheader "进度" [ref=f47e64]
+                  - columnheader "操作" [ref=f47e65]
+              - rowgroup [ref=f47e66]:
+                - row [ref=f47e67]:
+                  - cell "  测试项目集2026-已编辑" [ref=f47e68]:
+                    - generic [ref=f47e69]: 
+                    - generic [ref=f47e70]: 
+                    - link "测试项目集2026-已编辑" [ref=f47e71]:
+                      - /url: /zentao/program-product-2.html
+                  - cell "已挂起" [ref=f47e72]
+                  - cell "A admin" [ref=f47e73]:
+                    - generic [ref=f47e74]: A
+                    - link "admin" [ref=f47e76]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "待定" [ref=f47e77]
+                  - cell "2026-05-11" [ref=f47e78]
+                  - cell "2026-12-31" [ref=f47e79]
+                  - cell "0" [ref=f47e80]
+                  - cell [ref=f47e83]:
+                    - link "" [ref=f47e84]:
+                      - /url: /zentao/program-start-2.html?onlybody=yes
+                    - generic [ref=f47e86]:
+                      - button "" [ref=f47e87]
+                      - text:   
+                    - link "" [ref=f47e88]:
+                      - /url: /zentao/program-edit-2.html
+                    - link "" [ref=f47e90]:
+                      - /url: /zentao/program-create-2.html
+                    - link "" [ref=f47e92]:
+                      - /url: /zentao/program-delete-2.html
+                - text:                                                                                                                                 
+                - row [ref=f47e94]:
+                  - cell "  完整测试项目集-已编辑" [ref=f47e95]:
+                    - generic [ref=f47e96]: 
+                    - generic [ref=f47e97]: 
+                    - link "完整测试项目集-已编辑" [ref=f47e98]:
+                      - /url: /zentao/program-product-6.html
+                  - cell "进行中" [ref=f47e99]
+                  - cell "A admin" [ref=f47e100]:
+                    - generic [ref=f47e101]: A
+                    - link "admin" [ref=f47e103]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 35万" [ref=f47e104]
+                  - cell "2026-05-11" [ref=f47e105]
+                  - cell "2027-05-11" [ref=f47e106]
+                  - cell "0" [ref=f47e107]
+                  - cell [ref=f47e110]:
+                    - link "" [ref=f47e111]:
+                      - /url: /zentao/program-close-6.html?onlybody=yes
+                    - generic [ref=f47e113]:
+                      - button "" [ref=f47e114]
+                      - text:  
+                    - link "" [ref=f47e115]:
+                      - /url: /zentao/program-edit-6.html
+                    - link "" [ref=f47e117]:
+                      - /url: /zentao/program-create-6.html
+                    - link "" [ref=f47e119]:
+                      - /url: /zentao/program-delete-6.html
+                - text:                             
+                - row [ref=f47e121]:
+                  - cell "  创建测试-已编辑" [ref=f47e122]:
+                    - generic [ref=f47e123]: 
+                    - generic [ref=f47e124]: 
+                    - link "创建测试-已编辑" [ref=f47e125]:
+                      - /url: /zentao/program-product-17.html
+                  - cell "未开始" [ref=f47e126]
+                  - cell "A admin" [ref=f47e127]:
+                    - generic [ref=f47e128]: A
+                    - link "admin" [ref=f47e130]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 9万" [ref=f47e131]
+                  - cell "2026-03-01" [ref=f47e132]
+                  - cell "2026-12-31" [ref=f47e133]
+                  - cell "0" [ref=f47e134]
+                  - cell [ref=f47e137]:
+                    - link "" [ref=f47e138]:
+                      - /url: /zentao/program-start-17.html?onlybody=yes
+                    - generic [ref=f47e140]:
+                      - button "" [ref=f47e141]
+                      - text:   
+                    - link "" [ref=f47e142]:
+                      - /url: /zentao/program-edit-17.html
+                    - link "" [ref=f47e144]:
+                      - /url: /zentao/program-create-17.html
+                    - link "" [ref=f47e146]:
+                      - /url: /zentao/program-delete-17.html
+                - row [ref=f47e148]:
+                  - cell "  深度测试-父项目集A" [ref=f47e149]:
+                    - generic [ref=f47e150]: 
+                    - generic [ref=f47e151]: 
+                    - link "深度测试-父项目集A" [ref=f47e152]:
+                      - /url: /zentao/program-product-18.html
+                  - cell "未开始" [ref=f47e153]
+                  - cell "A admin" [ref=f47e154]:
+                    - generic [ref=f47e155]: A
+                    - link "admin" [ref=f47e157]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 80万" [ref=f47e158]
+                  - cell "2026-01-01" [ref=f47e159]
+                  - cell "2027-12-31" [ref=f47e160]
+                  - cell "0" [ref=f47e161]
+                  - cell [ref=f47e164]:
+                    - link "" [ref=f47e165]:
+                      - /url: /zentao/program-start-18.html?onlybody=yes
+                    - generic [ref=f47e167]:
+                      - button "" [ref=f47e168]
+                      - text:   
+                    - link "" [ref=f47e169]:
+                      - /url: /zentao/program-edit-18.html
+                    - link "" [ref=f47e171]:
+                      - /url: /zentao/program-create-18.html
+                    - link "" [ref=f47e173]:
+                      - /url: /zentao/program-delete-18.html
+                - row [ref=f47e175]:
+                  - cell "  深度测试-三级子集A1-1" [ref=f47e176]:
+                    - generic [ref=f47e177]: 
+                    - generic [ref=f47e178]: 
+                    - link "深度测试-三级子集A1-1" [ref=f47e179]:
+                      - /url: /zentao/program-product-22.html
+                  - cell "未开始" [ref=f47e180]
+                  - cell "A admin" [ref=f47e181]:
+                    - generic [ref=f47e182]: A
+                    - link "admin" [ref=f47e184]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 10万" [ref=f47e185]
+                  - cell "2026-01-01" [ref=f47e186]
+                  - cell "2027-12-31" [ref=f47e187]
+                  - cell "0" [ref=f47e188]
+                  - cell [ref=f47e191]:
+                    - link "" [ref=f47e192]:
+                      - /url: /zentao/program-start-22.html?onlybody=yes
+                    - generic [ref=f47e194]:
+                      - button "" [ref=f47e195]
+                      - text:   
+                    - link "" [ref=f47e196]:
+                      - /url: /zentao/program-edit-22.html
+                    - link "" [ref=f47e198]:
+                      - /url: /zentao/program-create-22.html
+                    - link "" [ref=f47e200]:
+                      - /url: /zentao/program-delete-22.html
+                - row [ref=f47e202]:
+                  - cell "  调试测试项目集" [ref=f47e203]:
+                    - generic [ref=f47e204]: 
+                    - generic [ref=f47e205]: 
+                    - link "调试测试项目集" [ref=f47e206]:
+                      - /url: /zentao/program-product-23.html
+                  - cell "未开始" [ref=f47e207]
+                  - cell "A admin" [ref=f47e208]:
+                    - generic [ref=f47e209]: A
+                    - link "admin" [ref=f47e211]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 5万" [ref=f47e212]
+                  - cell "2026-01-01" [ref=f47e213]
+                  - cell "2026-12-31" [ref=f47e214]
+                  - cell "0" [ref=f47e215]
+                  - cell [ref=f47e218]:
+                    - link "" [ref=f47e219]:
+                      - /url: /zentao/program-start-23.html?onlybody=yes
+                    - generic [ref=f47e221]:
+                      - button "" [ref=f47e222]
+                      - text:   
+                    - link "" [ref=f47e223]:
+                      - /url: /zentao/program-edit-23.html
+                    - link "" [ref=f47e225]:
+                      - /url: /zentao/program-create-23.html
+                    - link "" [ref=f47e227]:
+                      - /url: /zentao/program-delete-23.html
+                - row [ref=f47e229]:
+                  - cell "  重测-三级子集-mp0nzfs3" [ref=f47e230]:
+                    - generic [ref=f47e231]: 
+                    - generic [ref=f47e232]: 
+                    - link "重测-三级子集-mp0nzfs3" [ref=f47e233]:
+                      - /url: /zentao/program-product-28.html
+                  - cell "未开始" [ref=f47e234]
+                  - cell "A admin" [ref=f47e235]:
+                    - generic [ref=f47e236]: A
+                    - link "admin" [ref=f47e238]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 10万" [ref=f47e239]
+                  - cell "2026-01-01" [ref=f47e240]
+                  - cell "2027-12-31" [ref=f47e241]
+                  - cell "0" [ref=f47e242]
+                  - cell [ref=f47e245]:
+                    - link "" [ref=f47e246]:
+                      - /url: /zentao/program-start-28.html?onlybody=yes
+                    - generic [ref=f47e248]:
+                      - button "" [ref=f47e249]
+                      - text:   
+                    - link "" [ref=f47e250]:
+                      - /url: /zentao/program-edit-28.html
+                    - link "" [ref=f47e252]:
+                      - /url: /zentao/program-create-28.html
+                    - link "" [ref=f47e254]:
+                      - /url: /zentao/program-delete-28.html
+                - row [ref=f47e256]:
+                  - cell "  专业测试-三级子集A1-1" [ref=f47e257]:
+                    - generic [ref=f47e258]: 
+                    - generic [ref=f47e259]: 
+                    - link "专业测试-三级子集A1-1" [ref=f47e260]:
+                      - /url: /zentao/program-product-36.html
+                  - cell "未开始" [ref=f47e261]
+                  - cell "A admin" [ref=f47e262]:
+                    - generic [ref=f47e263]: A
+                    - link "admin" [ref=f47e265]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 10万" [ref=f47e266]
+                  - cell "2026-05-01" [ref=f47e267]
+                  - cell "2026-10-31" [ref=f47e268]
+                  - cell "0" [ref=f47e269]
+                  - cell [ref=f47e272]:
+                    - link "" [ref=f47e273]:
+                      - /url: /zentao/program-start-36.html?onlybody=yes
+                    - generic [ref=f47e275]:
+                      - button "" [ref=f47e276]
+                      - text:   
+                    - link "" [ref=f47e277]:
+                      - /url: /zentao/program-edit-36.html
+                    - link "" [ref=f47e279]:
+                      - /url: /zentao/program-create-36.html
+                    - link "" [ref=f47e281]:
+                      - /url: /zentao/program-delete-36.html
+                - row [ref=f47e283]:
+                  - cell "  重测-层级三级" [ref=f47e284]:
+                    - generic [ref=f47e285]: 
+                    - generic [ref=f47e286]: 
+                    - link "重测-层级三级" [ref=f47e287]:
+                      - /url: /zentao/program-product-45.html
+                  - cell "未开始" [ref=f47e288]
+                  - cell "A admin" [ref=f47e289]:
+                    - generic [ref=f47e290]: A
+                    - link "admin" [ref=f47e292]:
+                      - /url: /zentao/user-profile-1.html?onlybody=yes
+                  - cell "¥ 10万" [ref=f47e293]
+                  - cell "2026-01-01" [ref=f47e294]
+                  - cell "2027-12-31" [ref=f47e295]
+                  - cell "0" [ref=f47e296]
+                  - cell [ref=f47e299]:
+                    - link "" [ref=f47e300]:
+                      - /url: /zentao/program-start-45.html?onlybody=yes
+                    - generic [ref=f47e302]:
+                      - button "" [ref=f47e303]
+                      - text:   
+                    - link "" [ref=f47e304]:
+                      - /url: /zentao/program-edit-45.html
+                    - link "" [ref=f47e306]:
+                      - /url: /zentao/program-create-45.html
+                    - link "" [ref=f47e308]:
+                      - /url: /zentao/program-delete-45.html
+            - generic [ref=f47e310]:
+              - generic [ref=f47e311]: 本页共 5 个顶级项目集，0 个独立项目。
+              - list [ref=f47e312]:
+                - listitem:
+                  - generic [ref=f47e313]:
+                    - text: 共
+                    - strong [ref=f47e314]: "34"
+                    - text: 项
+                - listitem:
+                  - button [ref=f47e316] [cursor=pointer]:
+                    - text: 每页
+                    - strong [ref=f47e317]: "5"
+                    - text: 项
+                - listitem:
+                  - link "":
+                    - /url: /zentao/program-browse-unclosed-order_asc-34-5-1-0.html
+                - listitem:
+                  - link "":
+                    - /url: "###"
+                - listitem:
+                  - generic [ref=f47e319]:
+                    - strong [ref=f47e320]: "1"
+                    - text: /
+                    - strong [ref=f47e321]: "7"
+                - listitem:
+                  - link "" [ref=f47e322] [cursor=pointer]:
+                    - /url: /zentao/program-browse-unclosed-order_asc-34-5-2-0.html
+                - listitem:
+                  - link "" [ref=f47e324] [cursor=pointer]:
+                    - /url: /zentao/program-browse-unclosed-order_asc-34-5-7-0.html
+  - generic [ref=f44e50]:
+    - list [ref=f44e51]:
+      - listitem [ref=f44e52]:
+        - generic [ref=f44e53] [cursor=pointer]: 项目集
+    - generic [ref=f44e55]:
+      - link "企业版 " [ref=f44e56] [cursor=pointer]:
+        - /url: javascript:void(0)
+        - text: 企业版
+        - generic [ref=f44e57]: 
+      - link " 开源版18.9" [ref=f44e58] [cursor=pointer]:
+        - /url: https://www.zentao.net
+        - generic [ref=f44e59]: 
+        - text: 开源版18.9
+      - link [ref=f44e60] [cursor=pointer]:
+        - /url: javascript:void(0)
+      - generic [ref=f44e67]:
+        - generic: 
+        - searchbox "请输入" [ref=f44e68]
+        - button "" [ref=f44e70] [cursor=pointer]

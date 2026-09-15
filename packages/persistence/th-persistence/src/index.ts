@@ -17,12 +17,19 @@ export type {
   SessionRepository,
   CreateSessionInput,
   SessionFilter,
+  TransitionSideEffects,
+  TransitionStatusOptions,
+  TransitionStatusResult,
+  PostProcessingTransitionOptions,
+  PostProcessingTransitionResult,
   ReportRepository,
   CreateReportInput,
   SiteProfileRepository,
   CreateSiteProfileInput,
   CognitionRepository,
 } from "./repositories/interfaces.js";
+
+export { assertValidTransition, canonicalSessionStatus, TERMINAL_SESSION_STATES } from "./repositories/transition.js";
 
 // In-memory implementations (no native deps)
 export {
