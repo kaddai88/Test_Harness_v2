@@ -2,7 +2,7 @@
  * Session routes — CRUD + enqueue.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { DatabaseRepositories } from "@test-harness/th-persistence";
+import { projectSessionMetadata, type DatabaseRepositories } from "@test-harness/th-persistence";
 import type { TaskQueue } from "@test-harness/th-queue";
 import type { Finding } from "@test-harness/th-protocol";
 import {
@@ -59,7 +59,10 @@ export async function handleCreateSession(
     targetUrl: body.targetUrl,
     targetConfig: body.targetConfig ?? {},
     scanConfig: body.scanConfig ?? {},
-    metadata: uploadedImages.length > 0 ? { uploadedImages } : {},
+    requestMetadata: {
+      ...(typeof scanConfig.instructions === "string" ? { instructions: scanConfig.instructions } : {}),
+      ...(uploadedImages.length > 0 ? { uploadedImages } : {}),
+    },
   });
 
   // Enqueue a test:execute job
@@ -104,12 +107,16 @@ export async function handleListSessions(
   ]);
 
   sendJson(res, 200, {
-    sessions: sessions.map((s) => ({
-      ...s,
-      score: s.metadata?.score,
-      summary: s.metadata?.summary,
-      findings: (s.metadata?.findings as Finding[] | undefined) ?? [],
-    })),
+    sessions: sessions.map((s) => {
+      const metadata = projectSessionMetadata(s);
+      return {
+        ...s,
+        metadata,
+        score: metadata.score,
+        summary: metadata.summary,
+        findings: (metadata.findings as Finding[] | undefined) ?? [],
+      };
+    }),
     total,
     limit,
     offset,
@@ -135,10 +142,10 @@ export async function handleGetSession(
   }
 
   // Flatten findings from metadata so the frontend can consume them directly
-  const findings =
-    (session.metadata?.findings as Finding[] | undefined) ?? [];
+  const metadata = projectSessionMetadata(session);
+  const findings = (metadata.findings as Finding[] | undefined) ?? [];
 
-  sendJson(res, 200, { ...session, findings, summary: session.metadata?.summary, score: session.metadata?.score });
+  sendJson(res, 200, { ...session, metadata, findings, summary: metadata.summary, score: metadata.score });
 }
 
 /** DELETE /api/v1/sessions/:id — delete a session. */

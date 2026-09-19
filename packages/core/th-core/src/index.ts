@@ -29,3 +29,33 @@ export type { Effect } from "./effect.js";
 
 // Plugin loader
 export { PluginLoader } from "./loader.js";
+
+// Shared identity and normalization contracts
+export {
+  normalizeCanonicalOrigin,
+  tryNormalizeCanonicalOrigin,
+  readLegacyHostname,
+  readLegacySiteProfileFilename,
+} from "./canonical-origin.js";
+export type {
+  CanonicalOriginKey,
+  LegacyHostnameReference,
+} from "./canonical-origin.js";
+export { analyzeCanonicalMappings } from "./mapping-analysis.js";
+export type {
+  MappingClassification,
+  CanonicalMappingCandidate,
+  MappingCollisionGroup,
+  MappingDiagnostic,
+  MappingAnalysis,
+} from "./mapping-analysis.js";
+export {
+  mapLegacySiteProfileOrigins,
+  applyExplicitSiteProfileOriginResolutions,
+} from "./origin-mapping.js";
+export type {
+  LegacySiteProfileOriginInput,
+  SiteProfileOriginMapping,
+  SiteProfileOriginMappingReport,
+  ExplicitSiteProfileOriginResolution,
+} from "./origin-mapping.js";

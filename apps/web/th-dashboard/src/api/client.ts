@@ -76,17 +76,17 @@ export const api = {
     fetch(`${API_BASE}/sites`).then(handleResponse<{ sites: SiteProfile[] }>),
 
   getSite: (id: string): Promise<{ site: SiteProfile }> =>
-    fetch(`${API_BASE}/sites/${id}`).then(handleResponse<{ site: SiteProfile }>),
+    fetch(`${API_BASE}/sites/${encodeURIComponent(id)}`).then(handleResponse<{ site: SiteProfile }>),
 
-  updateSite: (id: string, data: { name?: string; baseUrl?: string; clearCache?: boolean }): Promise<{ success: boolean; site: SiteProfile }> =>
-    fetch(`${API_BASE}/sites/${id}`, {
+  updateSite: (id: string, data: { name?: string; clearCache?: boolean }): Promise<{ success: boolean; site: SiteProfile }> =>
+    fetch(`${API_BASE}/sites/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }).then(handleResponse<{ success: boolean; site: SiteProfile }>),
 
   deleteSite: (id: string): Promise<{ success: boolean }> =>
-    fetch(`${API_BASE}/sites/${id}`, { method: 'DELETE' }).then(handleResponse<{ success: boolean }>),
+    fetch(`${API_BASE}/sites/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(handleResponse<{ success: boolean }>),
 
   clearSiteCognition: (id: string): Promise<{ success: boolean }> =>
     fetch(`${API_BASE}/sites/${encodeURIComponent(id)}/cognition`, { method: 'DELETE' }).then(handleResponse<{ success: boolean }>),

@@ -1,8 +1,8 @@
 /**
- * SiteProfile Store — file-based persistence for SmartLocator cache.
+ * SiteProfile projection store — derived, rebuildable SmartLocator cache.
  *
- * Stores per-site element caches as JSON files in a configurable directory.
- * Each site gets a file named by its hostname (e.g., `example.com.json`).
+ * Files are not SiteProfile authority. Their names derive from complete
+ * canonical origins and they may be deleted/rebuilt without changing authority.
  *
  * Phase 2 of the generalization layer: the SmartLocator auto-learns
  * selectors during a session. This store persists them across sessions
@@ -10,6 +10,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { normalizeCanonicalOrigin } from '@test-harness/th-core';
 import type { CachedElement } from "./site-profile.js";
 
 /** Default directory for site profile storage */
@@ -21,6 +22,52 @@ export interface SiteProfileData {
   baseUrl: string;
   elementCache: CachedElement[];
   updatedAt: number;
+  canonicalOriginKey?: string;
+}
+
+export interface SiteProfileProjection {
+  readonly canonicalOriginKey: string;
+  readonly name: string;
+  readonly elementCache: readonly CachedElement[];
+  readonly projectedAt: string;
+}
+
+/** Complete canonical origins are encoded as one deterministic file segment. */
+export function siteProfileProjectionFileName(rawOrigin: string): string {
+  return `${encodeURIComponent(normalizeCanonicalOrigin(rawOrigin))}.json`;
+}
+
+export function readSiteProfileProjection(rawOrigin: string, baseDir?: string): SiteProfileProjection | null {
+  const canonicalOriginKey = normalizeCanonicalOrigin(rawOrigin);
+  const filePath = join(baseDir ?? DEFAULT_DIR, siteProfileProjectionFileName(canonicalOriginKey));
+  if (!existsSync(filePath)) return null;
+  try {
+    const value = JSON.parse(readFileSync(filePath, 'utf8')) as SiteProfileProjection;
+    if (normalizeCanonicalOrigin(value.canonicalOriginKey) !== canonicalOriginKey
+      || !Array.isArray(value.elementCache) || typeof value.name !== 'string'
+      || typeof value.projectedAt !== 'string' || !Number.isFinite(Date.parse(value.projectedAt))) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/** One-way authority-derived projection/cache writer. It never reads or mutates authority. */
+export function writeSiteProfileProjection(data: SiteProfileProjection, baseDir?: string): void {
+  const canonicalOriginKey = normalizeCanonicalOrigin(data.canonicalOriginKey);
+  if (!Array.isArray(data.elementCache) || typeof data.name !== 'string' || !data.name.trim()
+    || !Number.isFinite(Date.parse(data.projectedAt))) {
+    throw new TypeError('Invalid SiteProfile projection');
+  }
+  const dir = baseDir ?? DEFAULT_DIR;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const projection: SiteProfileProjection = {
+    canonicalOriginKey,
+    name: data.name,
+    elementCache: structuredClone(data.elementCache),
+    projectedAt: data.projectedAt,
+  };
+  writeFileSync(join(dir, siteProfileProjectionFileName(canonicalOriginKey)), JSON.stringify(projection, null, 2), 'utf8');
 }
 
 /**
@@ -31,20 +78,14 @@ export function loadSiteProfile(
   targetUrl: string,
   baseDir?: string
 ): SiteProfileData | null {
-  const dir = baseDir ?? DEFAULT_DIR;
-  const hostname = extractHostname(targetUrl);
-  if (!hostname) return null;
-
-  const filePath = join(dir, `${hostname}.json`);
-  if (!existsSync(filePath)) return null;
-
-  try {
-    const raw = readFileSync(filePath, "utf-8");
-    const data = JSON.parse(raw) as SiteProfileData;
-    return data;
-  } catch {
-    return null;
-  }
+  const projection = readSiteProfileProjection(targetUrl, baseDir);
+  return projection ? {
+    name: projection.name,
+    baseUrl: projection.canonicalOriginKey,
+    canonicalOriginKey: projection.canonicalOriginKey,
+    elementCache: [...projection.elementCache],
+    updatedAt: Date.parse(projection.projectedAt),
+  } : null;
 }
 
 /**
@@ -55,16 +96,13 @@ export function saveSiteProfile(
   data: SiteProfileData,
   baseDir?: string
 ): void {
-  const dir = baseDir ?? DEFAULT_DIR;
-  const hostname = extractHostname(data.baseUrl);
-  if (!hostname) return;
-
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-
-  const filePath = join(dir, `${hostname}.json`);
-  writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  const canonicalOriginKey = normalizeCanonicalOrigin(data.canonicalOriginKey ?? data.baseUrl);
+  writeSiteProfileProjection({
+    canonicalOriginKey,
+    name: data.name,
+    elementCache: data.elementCache,
+    projectedAt: new Date(data.updatedAt).toISOString(),
+  }, baseDir);
 }
 
 /**
@@ -80,8 +118,9 @@ export function persistSiteCache(
 
   const existing = loadSiteProfile(targetUrl, baseDir);
   const data: SiteProfileData = {
-    name: existing?.name ?? extractHostname(targetUrl) ?? "",
-    baseUrl: targetUrl,
+    name: existing?.name ?? new URL(normalizeCanonicalOrigin(targetUrl)).hostname,
+    baseUrl: normalizeCanonicalOrigin(targetUrl),
+    canonicalOriginKey: normalizeCanonicalOrigin(targetUrl),
     elementCache: cache,
     updatedAt: Date.now(),
   };
@@ -98,14 +137,4 @@ export function loadSiteCache(
 ): CachedElement[] {
   const data = loadSiteProfile(targetUrl, baseDir);
   return data?.elementCache ?? [];
-}
-
-/** Extract hostname from a URL */
-function extractHostname(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname.replace(/[^a-zA-Z0-9.-]/g, "_");
-  } catch {
-    return null;
-  }
 }

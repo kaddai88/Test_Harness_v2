@@ -129,8 +129,10 @@ export interface PaginatedResponse<T> {
 
 /** Site profile — learned knowledge about a target website */
 export interface SiteProfile {
+  id: string;
   name: string;
   baseUrl: string;
+  canonicalOriginKey: string;
   elementCache: Array<{
     hint: string;
     selector: string;
@@ -139,7 +141,9 @@ export interface SiteProfile {
     hitCount: number;
     lastVerified: number;
   }>;
-  updatedAt: number;
+  testCount: number;
+  lastTestedAt: string | null;
+  updatedAt: string;
   /** Cognition statistics and data */
   cognition?: {
     episodes: number;

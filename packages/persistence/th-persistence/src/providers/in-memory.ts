@@ -18,10 +18,12 @@ import type {
   CreateSiteProfileInput,
   CognitionRepository,
 } from "../repositories/interfaces.js";
-import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "../schema.js";
+import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow, IdempotencyRecordRow } from "../schema.js";
+import type { AuthorityData } from '../authority/storage.js';
 import { assertValidTransition, canonicalSessionStatus, TERMINAL_SESSION_STATES } from "../repositories/transition.js";
 import type { PostProcessingStatus } from "@test-harness/th-protocol";
 import { assertValidPostProcessingTransition } from "../repositories/post-processing.js";
+import { assertUniqueCanonicalValues } from "../uniqueness.js";
 
 function uuid(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
@@ -38,10 +40,21 @@ function now(): string {
   return new Date().toISOString();
 }
 
+export interface InMemoryProviderData extends AuthorityData {
+  reports: Record<string, ReportRow>;
+}
+
+export function createInMemoryProviderData(): InMemoryProviderData {
+  return {
+    sessions: {}, reports: {}, sites: {}, cognition_episodes: {}, cognition_knowledge: {},
+    cognition_procedures: {}, cognition_patterns: {}, idempotency_records: {} as Record<string, IdempotencyRecordRow>,
+  };
+}
+
 // ── In-memory Session Repository ──
 
 export class InMemorySessionRepository implements SessionRepository {
-  private store = new Map<string, SessionRow>();
+  constructor(private readonly data: InMemoryProviderData = createInMemoryProviderData()) {}
 
   async create(input: CreateSessionInput): Promise<SessionRow> {
     const row: SessionRow = {
@@ -49,7 +62,7 @@ export class InMemorySessionRepository implements SessionRepository {
       targetUrl: input.targetUrl,
       targetConfig: input.targetConfig,
       scanConfig: input.scanConfig,
-      status: "pending",
+      status: "queued",
       createdAt: now(),
       startedAt: null,
       completedAt: null,
@@ -60,18 +73,21 @@ export class InMemorySessionRepository implements SessionRepository {
       postProcessingError: null,
       createdBy: input.createdBy ?? null,
       metadata: input.metadata ?? {},
+      ...(input.requestMetadata
+        ? { metadataByOwner: { request: structuredClone(input.requestMetadata) } }
+        : {}),
     };
-    this.store.set(row.id, row);
+    this.data.sessions[row.id] = row;
     return { ...row };
   }
 
   async findById(id: string): Promise<SessionRow | null> {
-    const row = this.store.get(id);
+    const row = this.data.sessions[id];
     return row ? { ...row } : null;
   }
 
   async findAll(filter?: SessionFilter): Promise<SessionRow[]> {
-    let rows = Array.from(this.store.values());
+    let rows = Object.values(this.data.sessions);
     if (filter?.status) {
       rows = rows.filter((r) => r.status === filter.status);
     }
@@ -84,7 +100,7 @@ export class InMemorySessionRepository implements SessionRepository {
   }
 
   async transitionStatus(id: string, options: TransitionStatusOptions): Promise<TransitionStatusResult> {
-    const row = this.store.get(id);
+    const row = this.data.sessions[id];
     if (!row) return { applied: false, currentState: "queued" };
 
     const currentState = canonicalSessionStatus(row.status);
@@ -119,7 +135,7 @@ export class InMemorySessionRepository implements SessionRepository {
   }
 
   async transitionPostProcessingStatus(id: string, options: PostProcessingTransitionOptions): Promise<PostProcessingTransitionResult> {
-    const row = this.store.get(id);
+    const row = this.data.sessions[id];
     if (!row) return { applied: false, currentState: "not_started" };
     const currentState = row.postProcessingStatus as PostProcessingStatus;
     if (currentState === options.target && options.expected.includes(currentState)) {
@@ -132,38 +148,29 @@ export class InMemorySessionRepository implements SessionRepository {
     return { applied: true, currentState: options.target, previousState: currentState };
   }
   async updateStartedAt(id: string): Promise<void> {
-    const row = this.store.get(id);
+    const row = this.data.sessions[id];
     if (row) row.startedAt = now();
   }
 
   async updateCompletedAt(id: string): Promise<void> {
-    const row = this.store.get(id);
+    const row = this.data.sessions[id];
     if (row) row.completedAt = now();
   }
 
-  async updateMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
-    const row = this.store.get(id);
-    if (row) {
-      row.metadata = { ...row.metadata, ...metadata };
-    }
-  }
-
   async delete(id: string): Promise<void> {
-    this.store.delete(id);
+    delete this.data.sessions[id];
   }
 
   async count(filter?: SessionFilter): Promise<number> {
-    if (!filter?.status) return this.store.size;
-    let count = 0;
-    this.store.forEach((r) => { if (r.status === filter.status) count++; });
-    return count;
+    const rows = Object.values(this.data.sessions);
+    return filter?.status ? rows.filter(row => row.status === filter.status).length : rows.length;
   }
 }
 
 // ── In-memory Report Repository ──
 
 export class InMemoryReportRepository implements ReportRepository {
-  private store = new Map<string, ReportRow>();
+  constructor(private readonly data: InMemoryProviderData = createInMemoryProviderData()) {}
 
   async create(input: CreateReportInput): Promise<ReportRow> {
     const row: ReportRow = {
@@ -174,45 +181,45 @@ export class InMemoryReportRepository implements ReportRepository {
       data: input.data ?? {},
       createdAt: now(),
     };
-    this.store.set(row.id, row);
+    this.data.reports[row.id] = row;
     return { ...row };
   }
 
   async findBySessionId(sessionId: string): Promise<ReportRow[]> {
-    return Array.from(this.store.values())
+    return Object.values(this.data.reports)
       .filter((r) => r.sessionId === sessionId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((r) => ({ ...r }));
   }
 
   async findBySessionIdAndFormat(sessionId: string, format: string): Promise<ReportRow | null> {
-    for (const row of this.store.values()) {
+    for (const row of Object.values(this.data.reports)) {
       if (row.sessionId === sessionId && row.format === format) return { ...row };
     }
     return null;
   }
 
   async delete(id: string): Promise<void> {
-    this.store.delete(id);
+    delete this.data.reports[id];
   }
 }
 
 // ── In-memory Site Profile Repository ──
 
 export class InMemorySiteProfileRepository implements SiteProfileRepository {
-  private store = new Map<string, SiteProfileRow>();
+  constructor(private readonly data: InMemoryProviderData = createInMemoryProviderData()) {}
 
   async findAll(): Promise<SiteProfileRow[]> {
-    return Array.from(this.store.values()).map((r) => ({ ...r }));
+    return Object.values(this.data.sites).map((r) => ({ ...r }));
   }
 
   async findById(id: string): Promise<SiteProfileRow | null> {
-    const row = this.store.get(id);
+    const row = this.data.sites[id];
     return row ? { ...row } : null;
   }
 
   async findByBaseUrl(baseUrl: string): Promise<SiteProfileRow | null> {
-    for (const row of this.store.values()) {
+    for (const row of Object.values(this.data.sites)) {
       if (row.baseUrl === baseUrl) return { ...row };
     }
     return null;
@@ -223,17 +230,23 @@ export class InMemorySiteProfileRepository implements SiteProfileRepository {
       id: input.id ?? uuid(),
       name: input.name,
       baseUrl: input.baseUrl,
+      canonicalOriginKey: input.canonicalOriginKey ?? null,
       elementCache: JSON.stringify(input.elementCache ?? []),
       testCount: 0,
       lastTestedAt: null,
       updatedAt: now(),
     };
-    this.store.set(row.id, row);
+    assertUniqueCanonicalValues(
+      [...Object.values(this.data.sites), row],
+      (candidate) => candidate.canonicalOriginKey,
+      (candidate) => candidate.id,
+    );
+    this.data.sites[row.id] = row;
     return { ...row };
   }
 
   async update(id: string, data: Partial<Pick<SiteProfileRow, 'name' | 'baseUrl' | 'elementCache' | 'testCount' | 'lastTestedAt'>>): Promise<void> {
-    const row = this.store.get(id);
+    const row = this.data.sites[id];
     if (row) {
       if (data.name !== undefined) row.name = data.name;
       if (data.baseUrl !== undefined) row.baseUrl = data.baseUrl;
@@ -245,7 +258,7 @@ export class InMemorySiteProfileRepository implements SiteProfileRepository {
   }
 
   async incrementTestCount(id: string): Promise<void> {
-    const row = this.store.get(id);
+    const row = this.data.sites[id];
     if (row) {
       row.testCount++;
       row.lastTestedAt = now();
@@ -254,7 +267,7 @@ export class InMemorySiteProfileRepository implements SiteProfileRepository {
   }
 
   async delete(id: string): Promise<void> {
-    this.store.delete(id);
+    delete this.data.sites[id];
   }
 }
 
@@ -262,14 +275,11 @@ export class InMemorySiteProfileRepository implements SiteProfileRepository {
 // All queries use `siteId` (FK to site_profiles) for categorization.
 
 export class InMemoryCognitionRepository implements CognitionRepository {
-  private episodes = new Map<string, CognitionEpisodeRow>();
-  private knowledge = new Map<string, CognitionKnowledgeRow>();
-  private procedures = new Map<string, CognitionProcedureRow>();
-  private patterns = new Map<string, CognitionPatternRow>();
+  constructor(private readonly data: InMemoryProviderData = createInMemoryProviderData()) {}
 
   // Episodes — linked to site via siteId
   async listEpisodesBySite(siteId: string): Promise<CognitionEpisodeRow[]> {
-    return Array.from(this.episodes.values())
+    return Object.values(this.data.cognition_episodes)
       .filter((r) => r.siteId === siteId)
       .sort((a, b) => b.timestamp - a.timestamp)
       .map((r) => ({ ...r }));
@@ -277,119 +287,131 @@ export class InMemoryCognitionRepository implements CognitionRepository {
 
   async createEpisode(episode: Omit<CognitionEpisodeRow, 'id'>): Promise<CognitionEpisodeRow> {
     const row: CognitionEpisodeRow = { id: uuid(), ...episode };
-    this.episodes.set(row.id, row);
+    assertUniqueCanonicalValues(
+      [...Object.values(this.data.cognition_episodes), row], (candidate) => candidate.canonicalId, (candidate) => candidate.id,
+    );
+    this.data.cognition_episodes[row.id] = row;
     return { ...row };
   }
 
   async deleteEpisodesBySite(siteId: string): Promise<void> {
-    for (const [id, row] of this.episodes) {
-      if (row.siteId === siteId) this.episodes.delete(id);
+    for (const [id, row] of Object.entries(this.data.cognition_episodes)) {
+      if (row.siteId === siteId) delete this.data.cognition_episodes[id];
     }
   }
 
   async countEpisodesBySite(siteId: string): Promise<number> {
-    return Array.from(this.episodes.values()).filter((r) => r.siteId === siteId).length;
+    return Object.values(this.data.cognition_episodes).filter((r) => r.siteId === siteId).length;
   }
 
   // Knowledge — linked to site via siteId (nullable for general knowledge)
   async listKnowledgeBySite(siteId: string): Promise<CognitionKnowledgeRow[]> {
-    return Array.from(this.knowledge.values())
+    return Object.values(this.data.cognition_knowledge)
       .filter((r) => r.siteId === siteId)
       .sort((a, b) => b.confidence - a.confidence)
       .map((r) => ({ ...r }));
   }
 
   async listGeneralKnowledge(): Promise<CognitionKnowledgeRow[]> {
-    return Array.from(this.knowledge.values())
+    return Object.values(this.data.cognition_knowledge)
       .filter((r) => r.siteId === null)
       .sort((a, b) => b.confidence - a.confidence)
       .map((r) => ({ ...r }));
   }
 
   async getKnowledge(id: string): Promise<CognitionKnowledgeRow | null> {
-    const row = this.knowledge.get(id);
+    const row = this.data.cognition_knowledge[id];
     return row ? { ...row } : null;
   }
 
   async createKnowledge(k: Omit<CognitionKnowledgeRow, 'id' | 'useCount' | 'lastUsed' | 'createdAt'>): Promise<CognitionKnowledgeRow> {
     const row: CognitionKnowledgeRow = { id: uuid(), ...k, useCount: 0, lastUsed: null, createdAt: now() };
-    this.knowledge.set(row.id, row);
+    assertUniqueCanonicalValues(
+      [...Object.values(this.data.cognition_knowledge), row], (candidate) => candidate.canonicalId, (candidate) => candidate.id,
+    );
+    this.data.cognition_knowledge[row.id] = row;
     return { ...row };
   }
 
   async updateKnowledge(id: string, data: Partial<Pick<CognitionKnowledgeRow, 'confidence' | 'useCount' | 'lastUsed'>>): Promise<void> {
-    const row = this.knowledge.get(id);
+    const row = this.data.cognition_knowledge[id];
     if (row) { Object.assign(row, data); }
   }
 
   async deleteKnowledge(id: string): Promise<void> {
-    this.knowledge.delete(id);
+    delete this.data.cognition_knowledge[id];
   }
 
   async deleteKnowledgeBySite(siteId: string): Promise<void> {
-    for (const [id, row] of this.knowledge) {
-      if (row.siteId === siteId) this.knowledge.delete(id);
+    for (const [id, row] of Object.entries(this.data.cognition_knowledge)) {
+      if (row.siteId === siteId) delete this.data.cognition_knowledge[id];
     }
   }
 
   async countKnowledgeBySite(siteId: string): Promise<number> {
-    return Array.from(this.knowledge.values()).filter((r) => r.siteId === siteId).length;
+    return Object.values(this.data.cognition_knowledge).filter((r) => r.siteId === siteId).length;
   }
 
   // Procedures — linked to site via siteId
   async listProceduresBySite(siteId: string): Promise<CognitionProcedureRow[]> {
-    return Array.from(this.procedures.values())
+    return Object.values(this.data.cognition_procedures)
       .filter((r) => r.siteId === siteId)
       .map((r) => ({ ...r }));
   }
 
   async createProcedure(p: Omit<CognitionProcedureRow, 'id' | 'useCount' | 'lastUsed'>): Promise<CognitionProcedureRow> {
     const row: CognitionProcedureRow = { id: uuid(), ...p, useCount: 0, lastUsed: null };
-    this.procedures.set(row.id, row);
+    assertUniqueCanonicalValues(
+      [...Object.values(this.data.cognition_procedures), row], (candidate) => candidate.canonicalId, (candidate) => candidate.id,
+    );
+    this.data.cognition_procedures[row.id] = row;
     return { ...row };
   }
 
   async updateProcedure(id: string, data: Partial<Pick<CognitionProcedureRow, 'successRate' | 'useCount' | 'lastUsed' | 'steps'>>): Promise<void> {
-    const row = this.procedures.get(id);
+    const row = this.data.cognition_procedures[id];
     if (row) { Object.assign(row, data); }
   }
 
   async deleteProceduresBySite(siteId: string): Promise<void> {
-    for (const [id, row] of this.procedures) {
-      if (row.siteId === siteId) this.procedures.delete(id);
+    for (const [id, row] of Object.entries(this.data.cognition_procedures)) {
+      if (row.siteId === siteId) delete this.data.cognition_procedures[id];
     }
   }
 
   async countProceduresBySite(siteId: string): Promise<number> {
-    return Array.from(this.procedures.values()).filter((r) => r.siteId === siteId).length;
+    return Object.values(this.data.cognition_procedures).filter((r) => r.siteId === siteId).length;
   }
 
   // Patterns — linked to site via siteId
   async listPatternsBySite(siteId: string): Promise<CognitionPatternRow[]> {
-    return Array.from(this.patterns.values())
+    return Object.values(this.data.cognition_patterns)
       .filter((r) => r.siteId === siteId)
       .map((r) => ({ ...r }));
   }
 
   async createPattern(p: Omit<CognitionPatternRow, 'id' | 'lastSeen'>): Promise<CognitionPatternRow> {
     const row: CognitionPatternRow = { id: uuid(), ...p, lastSeen: null };
-    this.patterns.set(row.id, row);
+    assertUniqueCanonicalValues(
+      [...Object.values(this.data.cognition_patterns), row], (candidate) => candidate.canonicalId, (candidate) => candidate.id,
+    );
+    this.data.cognition_patterns[row.id] = row;
     return { ...row };
   }
 
   async updatePattern(id: string, data: Partial<Pick<CognitionPatternRow, 'frequency' | 'confidence' | 'lastSeen'>>): Promise<void> {
-    const row = this.patterns.get(id);
+    const row = this.data.cognition_patterns[id];
     if (row) { Object.assign(row, data); }
   }
 
   async deletePatternsBySite(siteId: string): Promise<void> {
-    for (const [id, row] of this.patterns) {
-      if (row.siteId === siteId) this.patterns.delete(id);
+    for (const [id, row] of Object.entries(this.data.cognition_patterns)) {
+      if (row.siteId === siteId) delete this.data.cognition_patterns[id];
     }
   }
 
   async countPatternsBySite(siteId: string): Promise<number> {
-    return Array.from(this.patterns.values()).filter((r) => r.siteId === siteId).length;
+    return Object.values(this.data.cognition_patterns).filter((r) => r.siteId === siteId).length;
   }
 
   // Bulk — delete all cognition data for a site

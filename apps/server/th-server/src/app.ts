@@ -12,7 +12,7 @@
 import {
   createDatabase,
   createInMemoryDatabase,
-  type DatabaseRepositories,
+  type DatabaseRuntime,
 } from "@test-harness/th-persistence";
 import { createInMemoryQueue, type TaskQueue } from "@test-harness/th-queue";
 import { APIServer } from "@test-harness/th-api";
@@ -202,7 +202,7 @@ export class RateLimiter {
 }
 
 export class TestHarnessServer {
-  private db?: DatabaseRepositories & { close?: () => void };
+  private db?: DatabaseRuntime & { close?: () => void };
   private queue?: TaskQueue;
   private api?: APIServer;
   private worker?: WorkerBootstrap;
@@ -269,6 +269,7 @@ export class TestHarnessServer {
     this.api = new APIServer({
       port,
       repos: this.db,
+      authority: this.db.authority,
       queue: this.queue,
       envPath: process.env.ENV_PATH ?? ".env",
     });
@@ -278,6 +279,7 @@ export class TestHarnessServer {
     this.worker = new WorkerBootstrap({
       queue: this.queue,
       repos: this.db,
+      authority: this.db.authority,
       llm,
       wsHandler: this.api.getWebSocketHandler(),
     });

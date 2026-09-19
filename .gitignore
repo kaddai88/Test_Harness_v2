@@ -6,6 +6,7 @@
 /.cognition/
 /.site-profiles/
 /apps/server/th-server/.site-profiles/
+/.p6-rehearsal/
 
 # Generated root screenshot
 /screenshot.png
@@ -13,6 +14,7 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+/__pycache__/
 
 # Build output
 dist/

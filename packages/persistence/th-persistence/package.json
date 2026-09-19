@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./authority": {
+      "types": "./dist/authority/index.d.ts",
+      "import": "./dist/authority/index.js"
     }
   },
   "scripts": {
@@ -15,9 +19,11 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "migrate": "tsx src/migrate.ts"
+    "migrate": "tsx src/migrate.ts",
+    "p6:rehearsal-preflight": "tsx src/cutover/cli.ts"
   },
   "dependencies": {
+    "@test-harness/th-cognition": "workspace:*",
     "@test-harness/th-core": "workspace:*",
     "@test-harness/th-protocol": "workspace:*",
     "better-sqlite3": "^11.0.0"

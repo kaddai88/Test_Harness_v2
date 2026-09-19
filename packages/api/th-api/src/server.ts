@@ -5,6 +5,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { DatabaseRepositories } from "@test-harness/th-persistence";
+import type { AuthorityServices } from '@test-harness/th-persistence/authority';
 import type { TaskQueue } from "@test-harness/th-queue";
 import { applyCors, getPathname, sendJson } from "./http.js";
 import { dispatchSessionRoute } from "./routes/sessions.js";
@@ -17,6 +18,7 @@ import { WebSocketHandler } from "./websocket.js";
 export interface APIServerOptions {
   port?: number;
   repos: DatabaseRepositories;
+  authority: AuthorityServices;
   queue: TaskQueue;
   envPath?: string;
 }
@@ -26,12 +28,14 @@ export class APIServer {
   private ws: WebSocketHandler;
   private readonly port: number;
   private readonly repos: DatabaseRepositories;
+  private readonly authority: AuthorityServices;
   private readonly queue: TaskQueue;
   private readonly envPath: string;
 
   constructor(opts: APIServerOptions) {
     this.port = opts.port ?? 3000;
     this.repos = opts.repos;
+    this.authority = opts.authority;
     this.queue = opts.queue;
     this.envPath = opts.envPath ?? ".env";
     this.ws = new WebSocketHandler();
@@ -132,7 +136,8 @@ export class APIServer {
 
     // Site profile routes
     const handled5 = await dispatchSiteRoute(req, res, {
-      repos: this.repos,
+      cognition: this.authority.cognition,
+      sites: this.authority.sites,
     }, pathname);
     if (handled5) return;
 

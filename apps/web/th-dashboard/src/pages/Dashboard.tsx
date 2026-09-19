@@ -39,7 +39,7 @@ export const Dashboard: React.FC = () => {
   const stats = useMemo(() => {
     const safeSessions = sessions ?? [];
     const total = totalSessions ?? safeSessions.length;
-    const active = safeSessions.filter((s) => s.status === 'running' || s.status === 'pending' || s.status === 'planning' || s.status === 'executing').length;
+    const active = safeSessions.filter((s) => s.status === 'queued' || s.status === 'running' || s.status === 'pending' || s.status === 'planning' || s.status === 'executing' || s.status === 'cancelling').length;
     const completed = safeSessions.filter((s) => s.status === 'completed');
     const avgScore =
       completed.length > 0

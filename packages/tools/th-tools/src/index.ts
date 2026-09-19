@@ -20,7 +20,7 @@ import { createObservePageTool } from "./builtins/observe-page.js";
 import { createExtractDataTool } from "./builtins/extract-data.js";
 import { createExploreSiteTool } from "./builtins/explore-site.js";
 import { createConfigureSiteTool } from "./builtins/configure-site.js";
-import { BrowserDriverDefinition } from "@test-harness/th-browser";
+import { BrowserDriverDefinition, SiteProfileCapabilityDefinition } from "@test-harness/th-browser";
 import { createMCPNativeTools } from "./builtins/mcp-tools.js";
 import type { Tool } from "@test-harness/th-protocol";
 
@@ -64,11 +64,13 @@ export function createAllTools(container: THContainer): Tool[] {
       createObservePageTool(container),
       createExtractDataTool(container),
       createExploreSiteTool(container),
-      createConfigureSiteTool(container),
       // createExecuteJsTool(container), // Disabled: agent was abusing it
     );
   } catch {
     // BrowserDriver not available — skip browser tools
+  }
+  if (container.has(SiteProfileCapabilityDefinition)) {
+    tools.push(createConfigureSiteTool(container));
   }
 
   return tools;
@@ -85,6 +87,7 @@ export function createAllTools(container: THContainer): Tool[] {
  */
 export async function createMCPModeTools(
   mcpServerUrl = "http://localhost:3001/sse",
+  container?: THContainer,
 ): Promise<Tool[]> {
   const tools: Tool[] = [
     createHttpRequestTool(),
@@ -94,11 +97,9 @@ export async function createMCPModeTools(
   const mcpTools = await createMCPNativeTools(mcpServerUrl);
   tools.push(...mcpTools);
 
-  // Add site knowledge tools (don't need BrowserDriver, file-based only)
-  // configure_site: manual site profile configuration
-  // explore_site is NOT added — LLM explores via browser_snapshot in MCP mode
-  const emptyContainer = new THContainer();
-  tools.push(createConfigureSiteTool(emptyContainer));
+  if (container?.has(SiteProfileCapabilityDefinition)) {
+    tools.push(createConfigureSiteTool(container));
+  }
 
   return tools;
 }

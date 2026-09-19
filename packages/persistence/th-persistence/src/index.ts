@@ -9,8 +9,52 @@
  */
 
 // Schema
-export { POSTGRES_SCHEMA, SQLITE_SCHEMA } from "./schema.js";
-export type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "./schema.js";
+export {
+  POSTGRES_SCHEMA,
+  SQLITE_SCHEMA,
+  POSTGRES_A2_UNIQUENESS_SCHEMA,
+  SQLITE_A2_UNIQUENESS_SCHEMA,
+} from "./schema.js";
+export type {
+  SessionRow,
+  SessionMetadataByOwner,
+  ReportRow,
+  SiteProfileRow,
+  CognitionProvenanceRecord,
+  CognitionEpisodeRow,
+  CognitionKnowledgeRow,
+  CognitionProcedureRow,
+  CognitionPatternRow,
+  IdempotencyRecordRow,
+} from "./schema.js";
+
+export {
+  CanonicalBackfillBlockedError,
+  assertCanonicalUniqueness,
+  prepareCanonicalBackfill,
+  applyJsonFileCanonicalBackfill,
+  applyJsonFileCanonicalBackfillFile,
+} from "./canonical-backfill.js";
+export type {
+  CanonicalBackfillInput,
+  CanonicalBackfillOutput,
+  CanonicalBackfillReport,
+  JsonCanonicalBackfillOptions,
+} from "./canonical-backfill.js";
+export {
+  IdempotencyConflictError,
+  assertUniqueIdempotencyRecords,
+  JsonFileIdempotencyStore,
+} from "./idempotency.js";
+export {
+  CanonicalUniquenessError,
+  assertUniqueCanonicalValues,
+} from "./uniqueness.js";
+export type { IdempotencyUpsertInput } from "./idempotency.js";
+export { projectSessionMetadata } from './session-metadata.js';
+
+// Phase 2-B authority boundaries (additive; existing callers remain on adapters)
+export * from './authority/index.js';
 
 // Repository interfaces
 export type {
@@ -65,7 +109,10 @@ import {
   InMemoryReportRepository,
   InMemorySiteProfileRepository,
   InMemoryCognitionRepository,
+  createInMemoryProviderData,
 } from "./providers/in-memory.js";
+import { createInMemoryAuthorityRuntime, createJsonAuthorityRuntime } from './providers/authority.js';
+import type { AuthorityServices } from './authority/index.js';
 import type {
   SessionRepository,
   ReportRepository,
@@ -81,17 +128,23 @@ export interface DatabaseRepositories {
   cognition: CognitionRepository;
 }
 
+export interface DatabaseRuntime extends DatabaseRepositories {
+  authority: AuthorityServices;
+}
+
 /**
  * Create an in-memory database (no native deps).
  * Data is lost when the process exits.
  * This is the default — works everywhere.
  */
-export function createInMemoryDatabase(): DatabaseRepositories {
+export function createInMemoryDatabase(): DatabaseRuntime {
+  const data = createInMemoryProviderData();
   return {
-    sessions: new InMemorySessionRepository(),
-    reports: new InMemoryReportRepository(),
-    sites: new InMemorySiteProfileRepository(),
-    cognition: new InMemoryCognitionRepository(),
+    sessions: new InMemorySessionRepository(data),
+    reports: new InMemoryReportRepository(data),
+    sites: new InMemorySiteProfileRepository(data),
+    cognition: new InMemoryCognitionRepository(data),
+    authority: createInMemoryAuthorityRuntime(data).services,
   };
 }
 
@@ -101,7 +154,7 @@ export function createInMemoryDatabase(): DatabaseRepositories {
  */
 export function createDatabase(
   dbPath?: string
-): DatabaseRepositories & { close?: () => void } {
+): DatabaseRuntime & { close?: () => void } {
   if (!dbPath) {
     return createInMemoryDatabase();
   }
@@ -109,11 +162,13 @@ export function createDatabase(
   // Fallback to JSON file database
   if (_JsonFileDatabase) {
     const db = new _JsonFileDatabase(dbPath);
+    const authority = createJsonAuthorityRuntime(db).services;
     return {
       sessions: new _JsonFileSessionRepository(db),
       reports: new _JsonFileReportRepository(db),
       sites: new _JsonFileSiteProfileRepository(db),
       cognition: new _JsonFileCognitionRepository(db),
+      authority,
       close: () => db.close(),
     };
   }

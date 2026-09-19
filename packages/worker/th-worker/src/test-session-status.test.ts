@@ -41,6 +41,7 @@ vi.mock("@test-harness/th-agent", () => ({
       return { sessionId: _opts.sessionId, status: "completed", turns: 1, summary: "ok" };
     }
   },
+  createDurableSessionPersistenceStore: () => ({ capabilities: { p2eAtomicSessionPublication: "supported" } }),
 }));
 
 // Alias so tests can control the mock behavior
@@ -48,16 +49,35 @@ const AgentLoopMock = vi.mocked(
   (await import("@test-harness/th-agent")).AgentLoop as any,
   { partial: true }
 ) as any;
+const profile = { id: 'site-1', name: 'Example', baseUrl: 'example.com',
+  canonicalOriginKey: 'https://example.com', elementCache: '[]', testCount: 0,
+  lastTestedAt: null, updatedAt: '2026-09-17T00:00:00.000Z' };
+const authority = { cognition: {
+  retrieveForSession: async () => ({ relevantEpisodes: [], relevantKnowledge: [], relevantProcedures: [], summary: '' }),
+  recordSession: async () => {},
+}, sites: {
+  ensure: vi.fn(async () => ({ result: { record: profile, created: false }, replayed: false })),
+  findById: vi.fn(async () => profile),
+  update: vi.fn(async () => ({ result: profile, replayed: false })),
+  replaceLocatorCache: vi.fn(async () => ({ result: profile, replayed: false })),
+  incrementMetric: vi.fn(async () => ({ result: { incremented: true, testCount: 1 }, replayed: false })),
+}, metadata: {
+  request: { read: vi.fn(async () => ({})) },
+  workerResult: { replace: vi.fn(async ({ fields }: any) => fields) },
+  p2e: { read: vi.fn(async () => ({})), replace: vi.fn(async ({ fields }: any) => fields), clear: vi.fn(async () => {}) },
+} } as any;
 
 vi.mock("@test-harness/th-browser", () => ({
   BrowserDriverDefinition: {},
+  SiteProfileCapabilityDefinition: {},
   PlaywrightBrowserProvider: class {
     async launch() { throw new Error("no browser in test"); }
   },
   loadSiteProfile: () => null,
   enrichSiteProfile: () => ({ summary: "no enrichment" }),
   saveSiteProfile: () => {},
-  createDefaultSiteProfile: () => ({}),
+  createDefaultSiteProfile: (name: string, baseUrl: string) => ({ name, baseUrl, forms: [], navigations: [],
+    constraints: {}, elementCache: [], updatedAt: Date.now() }),
 }));
 
 vi.mock("@test-harness/th-report", () => ({
@@ -69,8 +89,10 @@ vi.mock("@test-harness/th-core", () => ({
     events = {
       on: () => ({ dispose: () => {} }),
     };
+    register() {}
   },
   valueProvider: (v: any) => v,
+  normalizeCanonicalOrigin: (value: string) => new URL(value).origin,
 }));
 
 // ─── In-memory session repository with status history ───────────────────────
@@ -118,9 +140,6 @@ function makeRepos() {
     },
     async updateStartedAt() { session.startedAt = new Date().toISOString(); },
     async updateCompletedAt() { session.completedAt = new Date().toISOString(); },
-    async updateMetadata(id: string, metadata: Record<string, unknown>) {
-      session.metadata = { ...session.metadata, ...metadata };
-    },
     async count() { return 1; },
   };
 
@@ -146,6 +165,7 @@ describe("P1-E: session status flow", () => {
   const originalClearInterval = globalThis.clearInterval;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     activeIntervals = 0;
     globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: any[]) => {
       activeIntervals += 1;
@@ -174,6 +194,7 @@ describe("P1-E: session status flow", () => {
     const broadcasts: Array<{ type: string; data: any }> = [];
     const processor = new TestSessionJobProcessor({
       repos,
+      authority,
       llm: { id: "stub" } as any,
       wsHandler: {
         broadcast(event: any) { broadcasts.push({ type: event.type, data: event }); },
@@ -189,6 +210,9 @@ describe("P1-E: session status flow", () => {
     // The full lifecycle must be: planning → running → completed
     // (pending is set by the API layer before the job is enqueued)
     expect(statusHistory).toEqual(["planning", "running", "completed"]);
+    expect(authority.sites.incrementMetric).toHaveBeenCalledWith({
+      scope: { kind: 'session', profileId: 'site-1', sessionId: 'test-session-1' },
+    });
     expect(activeIntervals).toBe(0);
   });
 
@@ -199,6 +223,7 @@ describe("P1-E: session status flow", () => {
     const broadcasts: Array<{ type: string; status?: string; message?: string }> = [];
     const processor = new TestSessionJobProcessor({
       repos,
+      authority,
       llm: { id: "stub" } as any,
       wsHandler: {
         broadcast(event: any) {
@@ -232,6 +257,7 @@ describe("P1-E: session status flow", () => {
 
     const processor = new TestSessionJobProcessor({
       repos,
+      authority,
       llm: { id: "stub" } as any,
     });
 

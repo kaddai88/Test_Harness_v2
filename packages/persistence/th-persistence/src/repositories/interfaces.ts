@@ -7,7 +7,7 @@
  * Key design: All cognition data is linked to sites via `siteId` (FK).
  * No more free-text `targetUrl` matching — data is categorized by site.
  */
-import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "../schema.js";
+import type { SessionRow, SessionMetadataByOwner, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from "../schema.js";
 import type {
   TransitionSideEffects,
   TransitionStatusOptions,
@@ -38,6 +38,8 @@ export interface CreateSessionInput {
   scanConfig: Record<string, unknown>;
   createdBy?: string;
   metadata?: Record<string, unknown>;
+  /** Typed immutable request metadata initialized with the session record. */
+  requestMetadata?: SessionMetadataByOwner['request'];
 }
 
 export interface SessionFilter {
@@ -56,7 +58,6 @@ export interface SessionRepository {
   transitionPostProcessingStatus(id: string, options: PostProcessingTransitionOptions): Promise<PostProcessingTransitionResult>;
   updateStartedAt(id: string): Promise<void>;
   updateCompletedAt(id: string): Promise<void>;
-  updateMetadata(id: string, metadata: Record<string, unknown>): Promise<void>;
   delete(id: string): Promise<void>;
   count(filter?: SessionFilter): Promise<number>;
 }
@@ -85,6 +86,7 @@ export interface CreateSiteProfileInput {
   name: string;
   baseUrl: string;       // Normalized hostname
   elementCache?: unknown[];
+  canonicalOriginKey?: string | null;
 }
 
 export interface SiteProfileRepository {

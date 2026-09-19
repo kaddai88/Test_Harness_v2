@@ -1,12 +1,10 @@
 /**
  * Durable Session Persistence Store (I8-A-R1)
  *
- * Implements SessionPersistenceStore using the project's existing
- * SessionRepository from th-persistence. This provides genuine durability
- * across worker/process restarts.
+ * Implements SessionPersistenceStore through an owner-bound P2E metadata
+ * capability. The Agent package remains persistence-provider neutral.
  *
- * The PersistedSessionState is stored in the SessionRow.metadata field,
- * which is persisted to the database (SQLite/PostgreSQL) or JSON file.
+ * PersistedSessionState is one logical value owned by the P2E partition.
  */
 
 import type {
@@ -15,54 +13,54 @@ import type {
 import type {
   PersistedSessionState,
 } from './identity-semantics.js';
-import type { SessionRepository } from '@test-harness/th-persistence';
+export interface P2ESessionMetadataCapability {
+  read(sessionId: string): Promise<{ persistedSessionState?: unknown | null } | null>;
+  replace(input: {
+    sessionId: string;
+    fields: { persistedSessionState: PersistedSessionState };
+  }): Promise<{ persistedSessionState?: unknown | null }>;
+  clear(sessionId: string): Promise<void>;
+}
 
 /**
  * Durable session persistence store implementation
  *
- * Uses the project's SessionRepository to persist session state to
- * a durable backend (SQLite, PostgreSQL, or JSON file).
+ * Uses the injected owner capability to persist session state through the
+ * currently composed authority backend.
  *
  * This ensures that session identity semantics survives worker/process
  * restarts, which is a hard requirement from Phase 0.
  */
 export class DurableSessionPersistenceStore implements SessionPersistenceStore {
   readonly capabilities = {
-    // This generic wrapper cannot prove physical crash atomicity of its
-    // underlying backend. Concrete adapters must advertise the capability.
-    p2eAtomicSessionPublication: 'unknown' as const,
-    backendId: 'session-repository',
+    p2eAtomicSessionPublication: 'supported' as const,
+    backendId: 'p2e-metadata-owner',
   };
-  private sessionRepo: SessionRepository;
 
-  constructor(sessionRepo: SessionRepository) {
-    this.sessionRepo = sessionRepo;
-  }
+  constructor(private readonly metadata: P2ESessionMetadataCapability) {}
 
   /**
    * Save session state to persistent storage
    *
-   * Stores the PersistedSessionState in the SessionRow.metadata field.
-   * If the session doesn't exist yet, it will be created.
+   * Replaces the complete P2E-owned state in one authority transaction.
    */
   async save(state: PersistedSessionState): Promise<void> {
-    // Check if session exists
-    const existingSession = await this.sessionRepo.findById(state.sessionId);
-
-    if (existingSession) {
-      // Update metadata with persisted state
-      await this.sessionRepo.updateMetadata(state.sessionId, {
-        persistedSessionState: state,
+    try {
+      await this.metadata.replace({
+        sessionId: state.sessionId,
+        fields: { persistedSessionState: state },
       });
-    } else {
-      // Create new session with metadata
-      // Note: This requires the session to be created first by the AgentLoop
-      // If the session doesn't exist, we can't persist state yet
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'Session not found') throw error;
       throw new Error(
         `Session ${state.sessionId} not found in repository. ` +
         `Session must be created before persisting identity semantics.`
       );
     }
+  }
+
+  async publishOccurrence(state: PersistedSessionState): Promise<void> {
+    await this.save(state);
   }
 
   /**
@@ -72,50 +70,37 @@ export class DurableSessionPersistenceStore implements SessionPersistenceStore {
    * Returns null if the session doesn't exist or doesn't have persisted state.
    */
   async load(sessionId: string): Promise<PersistedSessionState | null> {
-    const session = await this.sessionRepo.findById(sessionId);
-
-    if (!session) {
-      return null;
-    }
-
-    const persistedState = session.metadata?.persistedSessionState as PersistedSessionState | undefined;
-
-    return persistedState ?? null;
+    const fields = await this.metadata.read(sessionId);
+    const persistedState = fields?.persistedSessionState;
+    return persistedState && typeof persistedState === 'object'
+      ? persistedState as PersistedSessionState
+      : null;
   }
 
   /**
    * Delete session state from persistent storage
    *
-   * Removes the persistedSessionState from the SessionRow.metadata field.
-   * Note: This doesn't delete the session itself, just the identity semantics.
+   * Clears only the P2E-owned state. The session and other owners are retained.
    */
   async delete(sessionId: string): Promise<void> {
-    const session = await this.sessionRepo.findById(sessionId);
-
-    if (session) {
-      // Remove persistedSessionState from metadata, keep other metadata
-      const { persistedSessionState, ...restMetadata } = session.metadata || {};
-      await this.sessionRepo.updateMetadata(sessionId, restMetadata);
-    }
+    if (await this.metadata.read(sessionId) !== null) await this.metadata.clear(sessionId);
   }
 
   /**
    * Check if session exists in persistent storage
    */
   async exists(sessionId: string): Promise<boolean> {
-    const session = await this.sessionRepo.findById(sessionId);
-    return session !== null;
+    return await this.metadata.read(sessionId) !== null;
   }
 }
 
 /**
  * Helper function to integrate DurableSessionPersistenceStore with AgentLoop
  *
- * This function creates a DurableSessionPersistenceStore from a SessionRepository
- * and can be used in the AgentLoop initialization.
+ * This function binds the Agent store to the P2E owner capability.
  */
 export function createDurableSessionPersistenceStore(
-  sessionRepo: SessionRepository
+  metadata: P2ESessionMetadataCapability
 ): DurableSessionPersistenceStore {
-  return new DurableSessionPersistenceStore(sessionRepo);
+  return new DurableSessionPersistenceStore(metadata);
 }

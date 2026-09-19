@@ -22,12 +22,17 @@ import { StrategyAdapter, type TestingStrategy, type StrategyAdjustment } from "
 import { KnowledgeUpdater, type KnowledgeUpdate, type KnowledgeHealth } from "./healing/knowledge-updater.js";
 import { ContextAwareness, type ContextState } from "./context/context-awareness.js";
 import { ExperienceRetriever, type RetrievedExperience } from "./context/experience-retriever.js";
+import type { CognitionLearnedEntityPort } from './authority-port.js';
 
 export interface CognitiveConfig {
   storagePath?: string;
   enableLearning?: boolean;
   enableSelfHealing?: boolean;
   enableContextAwareness?: boolean;
+  learnedEntityPort?: CognitionLearnedEntityPort;
+  siteId?: string;
+  sessionId?: string;
+  sessionTimestamp?: number;
 }
 
 export class CognitiveEngine {
@@ -52,7 +57,8 @@ export class CognitiveEngine {
   readonly experienceRetriever: ExperienceRetriever;
   
   // Configuration
-  private config: Required<CognitiveConfig>;
+  private config: Required<Omit<CognitiveConfig, 'learnedEntityPort' | 'siteId' | 'sessionId' | 'sessionTimestamp'>>
+    & Pick<CognitiveConfig, 'learnedEntityPort' | 'siteId' | 'sessionId' | 'sessionTimestamp'>;
   
   constructor(config: CognitiveConfig = {}) {
     this.config = {
@@ -60,13 +66,23 @@ export class CognitiveEngine {
       enableLearning: config.enableLearning ?? true,
       enableSelfHealing: config.enableSelfHealing ?? true,
       enableContextAwareness: config.enableContextAwareness ?? true,
+      learnedEntityPort: config.learnedEntityPort,
+      siteId: config.siteId,
+      sessionId: config.sessionId,
+      sessionTimestamp: config.sessionTimestamp,
     };
+
+    if (config.learnedEntityPort && (!config.siteId || !config.sessionId
+      || typeof config.sessionTimestamp !== 'number' || !Number.isFinite(config.sessionTimestamp))) {
+      throw new TypeError('Authority-backed cognition requires explicit siteId, sessionId, and sessionTimestamp');
+    }
     
     // Initialize memory systems
     this.workingMemory = new WorkingMemory();
-    this.episodicMemory = new EpisodicMemory(`${this.config.storagePath}/episodes.json`);
-    this.semanticMemory = new SemanticMemory(`${this.config.storagePath}/semantic.json`);
-    this.proceduralMemory = new ProceduralMemory(`${this.config.storagePath}/procedures.json`);
+    const persistLearnedEntities = !this.config.learnedEntityPort;
+    this.episodicMemory = new EpisodicMemory(`${this.config.storagePath}/episodes.json`, persistLearnedEntities);
+    this.semanticMemory = new SemanticMemory(`${this.config.storagePath}/semantic.json`, persistLearnedEntities);
+    this.proceduralMemory = new ProceduralMemory(`${this.config.storagePath}/procedures.json`, persistLearnedEntities);
     
     // Initialize learning systems
     this.reinforcementLearner = new ReinforcementLearner(`${this.config.storagePath}/q-values.json`);
@@ -98,13 +114,17 @@ export class CognitiveEngine {
   /**
    * Called when a new session starts.
    */
-  onSessionStart(targetUrl: string, testType?: string): {
+  async onSessionStart(targetUrl: string, testType?: string): Promise<{
     context: ContextState;
     experiences: RetrievedExperience;
     prompt: string;
-  } {
+  }> {
     // Retrieve relevant experiences
-    const experiences = this.experienceRetriever.retrieveForSession(targetUrl, testType);
+    const experiences = this.config.learnedEntityPort
+      ? await this.config.learnedEntityPort.retrieveForSession({
+          siteId: this.config.siteId!, sessionId: this.config.sessionId!, targetUrl, testType,
+        })
+      : this.experienceRetriever.retrieveForSession(targetUrl, testType);
     
     // Build initial context (without page state yet)
     const context = this.contextAwareness.buildContext(targetUrl, '', '', []);
@@ -123,12 +143,18 @@ export class CognitiveEngine {
   /**
    * Called when a session ends.
    */
-  onSessionEnd(
+  async onSessionEnd(
     targetUrl: string,
     outcome: 'success' | 'failure' | 'partial',
     findings: Array<{ severity: string; title: string; description: string }>,
     actions: Array<{ tool: string; input: Record<string, unknown>; success: boolean }>
-  ): void {
+  ): Promise<void> {
+    if (this.config.learnedEntityPort) {
+      await this.config.learnedEntityPort.recordSession({
+        siteId: this.config.siteId!, sessionId: this.config.sessionId!, targetUrl,
+        timestamp: this.config.sessionTimestamp!, outcome, findings, actions,
+      });
+    } else {
     // Store episode
     const episode: Omit<Episode, 'id' | 'accessCount' | 'lastAccessed'> = {
       type: 'session_summary',
@@ -165,6 +191,7 @@ export class CognitiveEngine {
           expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
         });
       }
+    }
     }
     
     // Record strategy outcome

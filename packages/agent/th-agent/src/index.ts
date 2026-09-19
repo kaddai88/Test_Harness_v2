@@ -38,3 +38,5 @@ export { SYSTEM_PROMPT, buildSessionPlanningPrompt } from "./prompts/system.js";
 export type { SiteHints } from "./prompts/system.js";
 export { verifyAction, diffSnapshots, getRecoveryGuidance } from "./verify.js";
 export type { VerificationResult, ActionOutcome, SnapshotDiff } from "./verify.js";
+export { DurableSessionPersistenceStore, createDurableSessionPersistenceStore } from "./durable-session-persistence.js";
+export type { P2ESessionMetadataCapability } from "./durable-session-persistence.js";

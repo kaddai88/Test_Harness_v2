@@ -54,9 +54,9 @@ export class SemanticMemory {
   private knowledge: Map<string, SemanticKnowledge> = new Map();
   private storagePath: string;
   
-  constructor(storagePath: string = '.cognition/semantic.json') {
+  constructor(storagePath: string = '.cognition/semantic.json', private readonly persistent: boolean = true) {
     this.storagePath = storagePath;
-    this.load();
+    if (this.persistent) this.load();
   }
   
   /**
@@ -85,7 +85,6 @@ export class SemanticMemory {
     if (item) {
       item.useCount++;
       item.lastUsed = Date.now();
-      this.save();
     }
     return item;
   }
@@ -282,6 +281,7 @@ export class SemanticMemory {
   }
   
   private save(): void {
+    if (!this.persistent) return;
     try {
       const fs = require('fs');
       const path = require('path');

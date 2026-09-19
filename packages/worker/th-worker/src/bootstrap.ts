@@ -5,6 +5,7 @@
  */
 import type { TaskQueue } from "@test-harness/th-queue";
 import type { DatabaseRepositories } from "@test-harness/th-persistence";
+import type { AuthorityServices } from '@test-harness/th-persistence/authority';
 import type { LLMProvider } from "@test-harness/th-protocol";
 import { TestSessionJobProcessor } from "./processors/test-session.js";
 
@@ -15,6 +16,7 @@ export interface WebSocketHandlerLike {
 export interface WorkerBootstrapOptions {
   queue: TaskQueue;
   repos: DatabaseRepositories;
+  authority: AuthorityServices;
   llm: LLMProvider;
   wsHandler?: WebSocketHandlerLike;
 }
@@ -22,6 +24,7 @@ export interface WorkerBootstrapOptions {
 export class WorkerBootstrap {
   private readonly queue: TaskQueue;
   private readonly repos: DatabaseRepositories;
+  private readonly authority: AuthorityServices;
   private readonly llm: LLMProvider;
   private readonly wsHandler?: WebSocketHandlerLike;
   private started = false;
@@ -29,6 +32,7 @@ export class WorkerBootstrap {
   constructor(opts: WorkerBootstrapOptions) {
     this.queue = opts.queue;
     this.repos = opts.repos;
+    this.authority = opts.authority;
     this.llm = opts.llm;
     this.wsHandler = opts.wsHandler;
   }
@@ -40,6 +44,7 @@ export class WorkerBootstrap {
 
     const testProcessor = new TestSessionJobProcessor({
       repos: this.repos,
+      authority: this.authority,
       llm: this.llm,
       wsHandler: this.wsHandler,
     });

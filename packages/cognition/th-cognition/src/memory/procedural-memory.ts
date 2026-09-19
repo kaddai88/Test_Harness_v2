@@ -63,9 +63,9 @@ export class ProceduralMemory {
   private procedures: Map<string, Procedure> = new Map();
   private storagePath: string;
   
-  constructor(storagePath: string = '.cognition/procedures.json') {
+  constructor(storagePath: string = '.cognition/procedures.json', private readonly persistent: boolean = true) {
     this.storagePath = storagePath;
-    this.load();
+    if (this.persistent) this.load();
   }
   
   /**
@@ -290,6 +290,7 @@ export class ProceduralMemory {
   }
   
   private save(): void {
+    if (!this.persistent) return;
     try {
       const fs = require('fs');
       const path = require('path');

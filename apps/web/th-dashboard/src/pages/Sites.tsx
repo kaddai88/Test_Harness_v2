@@ -11,7 +11,6 @@ export const Sites: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [editingSite, setEditingSite] = useState<SiteProfile | null>(null);
   const [editName, setEditName] = useState('');
-  const [editBaseUrl, setEditBaseUrl] = useState('');
 
   useEffect(() => {
     loadSites();
@@ -33,7 +32,6 @@ export const Sites: React.FC = () => {
   const handleEdit = (site: SiteProfile) => {
     setEditingSite(site);
     setEditName(site.name);
-    setEditBaseUrl(site.baseUrl);
   };
 
   const handleSave = async () => {
@@ -41,7 +39,6 @@ export const Sites: React.FC = () => {
     try {
       await api.updateSite(editingSite.baseUrl, {
         name: editName,
-        baseUrl: editBaseUrl,
       });
       setEditingSite(null);
       loadSites();
@@ -119,7 +116,7 @@ export const Sites: React.FC = () => {
     }
   };
 
-  const formatDate = (ts: number) => {
+  const formatDate = (ts: number | string | null) => {
     if (!ts) return 'Never';
     return new Date(ts).toLocaleString();
   };
@@ -345,11 +342,7 @@ export const Sites: React.FC = () => {
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
               />
-              <Input
-                label="Base URL"
-                value={editBaseUrl}
-                onChange={(e) => setEditBaseUrl(e.target.value)}
-              />
+              <Input label="Canonical origin" value={editingSite.canonicalOriginKey} disabled />
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <Button onClick={() => setEditingSite(null)} variant="secondary">

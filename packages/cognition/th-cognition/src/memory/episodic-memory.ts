@@ -59,9 +59,9 @@ export class EpisodicMemory {
   private episodes: Map<string, Episode> = new Map();
   private storagePath: string;
   
-  constructor(storagePath: string = '.cognition/episodes.json') {
+  constructor(storagePath: string = '.cognition/episodes.json', private readonly persistent: boolean = true) {
     this.storagePath = storagePath;
-    this.load();
+    if (this.persistent) this.load();
   }
   
   /**
@@ -90,7 +90,6 @@ export class EpisodicMemory {
     if (episode) {
       episode.accessCount++;
       episode.lastAccessed = Date.now();
-      this.save();
     }
     return episode;
   }
@@ -154,8 +153,6 @@ export class EpisodicMemory {
       episode.accessCount++;
       episode.lastAccessed = Date.now();
     }
-    this.save();
-    
     return results;
   }
   
@@ -257,6 +254,7 @@ export class EpisodicMemory {
   }
   
   private save(): void {
+    if (!this.persistent) return;
     try {
       const fs = require('fs');
       const path = require('path');

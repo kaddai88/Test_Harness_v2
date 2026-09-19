@@ -38,6 +38,12 @@ export type {
   CachedElement,
 } from "./site-profile.js";
 export { createDefaultSiteProfile } from "./site-profile.js";
+export { SiteProfileCapabilityDefinition } from './site-profile-capability.js';
+export type {
+  SiteProfileCapability,
+  SiteProfileCapabilityBinding,
+  SiteProfileCapabilityRecord,
+} from './site-profile-capability.js';
 export { SmartLocator } from "./smart-locator.js";
 export type { SmartLocatorOptions } from "./smart-locator.js";
 export { DISTILL_SCRIPT, formatDistilledForLLM } from "./distill-dom.js";
@@ -46,8 +52,11 @@ export {
   saveSiteProfile,
   persistSiteCache,
   loadSiteCache,
+  readSiteProfileProjection,
+  writeSiteProfileProjection,
+  siteProfileProjectionFileName,
 } from "./site-profile-store.js";
-export type { SiteProfileData } from "./site-profile-store.js";
+export type { SiteProfileData, SiteProfileProjection } from "./site-profile-store.js";
 export { enrichSiteProfile } from "./site-profile-enricher.js";
 export type { SessionActivity, EnrichmentResult } from "./site-profile-enricher.js";
 

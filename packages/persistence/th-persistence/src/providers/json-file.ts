@@ -3,7 +3,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow } from '../schema.js';
+import type { SessionRow, ReportRow, SiteProfileRow, CognitionEpisodeRow, CognitionKnowledgeRow, CognitionProcedureRow, CognitionPatternRow, IdempotencyRecordRow } from '../schema.js';
 import { assertValidTransition, canonicalSessionStatus, TERMINAL_SESSION_STATES } from "../repositories/transition.js";
 import type { PostProcessingStatus } from "@test-harness/th-protocol";
 import { assertValidPostProcessingTransition } from "../repositories/post-processing.js";
@@ -21,6 +21,9 @@ import type {
   CreateSiteProfileInput,
   CognitionRepository,
 } from '../repositories/interfaces.js';
+import { assertUniqueCanonicalValues } from '../uniqueness.js';
+import type { AuthorityData } from '../authority/storage.js';
+import { authorityDataFrom, mergeAuthorityChanges } from '../authority/storage.js';
 
 function uuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
@@ -70,6 +73,7 @@ export class JsonFileDatabase {
     cognition_knowledge: Record<string, CognitionKnowledgeRow>;
     cognition_procedures: Record<string, CognitionProcedureRow>;
     cognition_patterns: Record<string, CognitionPatternRow>;
+    idempotency_records: Record<string, IdempotencyRecordRow>;
   };
   private lock: Promise<void> = Promise.resolve();
 
@@ -83,6 +87,7 @@ export class JsonFileDatabase {
       cognition_knowledge: {},
       cognition_procedures: {},
       cognition_patterns: {},
+      idempotency_records: {},
     };
 
     // Ensure parent directory exists
@@ -110,22 +115,40 @@ export class JsonFileDatabase {
           cognition_knowledge: raw.cognition_knowledge ?? {},
           cognition_procedures: raw.cognition_procedures ?? {},
           cognition_patterns: raw.cognition_patterns ?? {},
+          idempotency_records: raw.idempotency_records ?? {},
         };
       } catch (err) {
         console.warn('[JsonDB] Failed to load existing data, starting fresh:', err);
       }
     }
 
-    // Save periodically
-    setInterval(() => this.save(), 5000);
   }
 
   save(): void {
+    this.writeAtomically(this.data);
+  }
+
+  private writeAtomically(data: typeof this.data): void {
+    const temporaryPath = `${this.filePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
     try {
-      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+      fs.writeFileSync(temporaryPath, JSON.stringify(data, null, 2));
+      fs.renameSync(temporaryPath, this.filePath);
     } catch (err) {
-      console.error('[JsonDB] Failed to save:', err);
+      try {
+        if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+      } catch {
+        // Preserve the original commit failure.
+      }
+      throw err;
     }
+  }
+
+  /** Privileged authority commit. Publish memory only after durable file replacement succeeds. */
+  commitAuthority(next: AuthorityData, before: AuthorityData): void {
+    const mergedAuthority = mergeAuthorityChanges(authorityDataFrom(this.data), before, next);
+    const merged = { ...this.data, ...mergedAuthority };
+    this.writeAtomically(merged);
+    this.data = merged;
   }
 
   async withTransitionLock<T>(operation: () => Promise<T> | T): Promise<T> {
@@ -161,7 +184,7 @@ export class JsonFileSessionRepository implements SessionRepository {
       targetUrl: input.targetUrl,
       targetConfig: input.targetConfig ?? {},
       scanConfig: input.scanConfig ?? {},
-      status: 'pending',
+      status: 'queued',
       createdAt: now(),
       startedAt: null,
       completedAt: null,
@@ -172,6 +195,9 @@ export class JsonFileSessionRepository implements SessionRepository {
       postProcessingError: null,
       createdBy: input.createdBy ?? null,
       metadata: input.metadata ?? {},
+      ...(input.requestMetadata
+        ? { metadataByOwner: { request: structuredClone(input.requestMetadata) } }
+        : {}),
     };
     this.db.getData().sessions[id] = row;
     this.db.save();
@@ -261,14 +287,6 @@ export class JsonFileSessionRepository implements SessionRepository {
     }
   }
 
-  async updateMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
-    const row = this.db.getData().sessions[id];
-    if (row) {
-      row.metadata = { ...row.metadata, ...metadata };
-      this.db.save();
-    }
-  }
-
   async delete(id: string): Promise<void> {
     delete this.db.getData().sessions[id];
     this.db.save();
@@ -349,11 +367,17 @@ export class JsonFileSiteProfileRepository implements SiteProfileRepository {
       id,
       name: input.name,
       baseUrl: input.baseUrl,
+      canonicalOriginKey: input.canonicalOriginKey ?? null,
       elementCache: JSON.stringify(input.elementCache ?? []),
       testCount: 0,
       lastTestedAt: null,
       updatedAt: now(),
     };
+    assertUniqueCanonicalValues(
+      [...Object.values(this.db.getData().sites), row],
+      (candidate) => candidate.canonicalOriginKey,
+      (candidate) => candidate.id,
+    );
     this.db.getData().sites[id] = row;
     this.db.save();
     return { ...row };
@@ -405,6 +429,11 @@ export class JsonFileCognitionRepository implements CognitionRepository {
   async createEpisode(episode: Omit<CognitionEpisodeRow, 'id'>): Promise<CognitionEpisodeRow> {
     const id = uuid();
     const row: CognitionEpisodeRow = { id, ...episode };
+    assertUniqueCanonicalValues(
+      [...Object.values(this.db.getData().cognition_episodes), row],
+      (candidate) => candidate.canonicalId,
+      (candidate) => candidate.id,
+    );
     this.db.getData().cognition_episodes[id] = row;
     this.db.save();
     return { ...row };
@@ -452,6 +481,11 @@ export class JsonFileCognitionRepository implements CognitionRepository {
       lastUsed: null,
       createdAt: now(),
     };
+    assertUniqueCanonicalValues(
+      [...Object.values(this.db.getData().cognition_knowledge), row],
+      (candidate) => candidate.canonicalId,
+      (candidate) => candidate.id,
+    );
     this.db.getData().cognition_knowledge[id] = row;
     this.db.save();
     return { ...row };
@@ -500,6 +534,11 @@ export class JsonFileCognitionRepository implements CognitionRepository {
       useCount: 0,
       lastUsed: null,
     };
+    assertUniqueCanonicalValues(
+      [...Object.values(this.db.getData().cognition_procedures), row],
+      (candidate) => candidate.canonicalId,
+      (candidate) => candidate.id,
+    );
     this.db.getData().cognition_procedures[id] = row;
     this.db.save();
     return { ...row };
@@ -543,6 +582,11 @@ export class JsonFileCognitionRepository implements CognitionRepository {
       ...pattern,
       lastSeen: null,
     };
+    assertUniqueCanonicalValues(
+      [...Object.values(this.db.getData().cognition_patterns), row],
+      (candidate) => candidate.canonicalId,
+      (candidate) => candidate.id,
+    );
     this.db.getData().cognition_patterns[id] = row;
     this.db.save();
     return { ...row };

@@ -70,7 +70,7 @@ import {
   describeLoginState,
   type LoginGuardState,
 } from "./login.js";
-import { CognitiveEngine } from "@test-harness/th-cognition";
+import { CognitiveEngine, type CognitionLearnedEntityPort } from "@test-harness/th-cognition";
 import * as path from "path";
 
 // P2-E I7-B-R1: Real AgentLoop integration
@@ -194,6 +194,12 @@ export interface AgentLoopOptions {
   rolloutPolicy?: import('./session-persistence.js').GlobalRolloutPolicy;
   /** P2-E I8-A: Session persistence store for restart recovery */
   sessionPersistenceStore?: import('./session-persistence.js').SessionPersistenceStore;
+  /** P6 2-C: production learned entities use the injected authority capability. */
+  cognition?: {
+    readonly siteId: string;
+    readonly sessionTimestamp: number;
+    readonly learnedEntities: CognitionLearnedEntityPort;
+  };
 }
 
 // ─── Phase 4: Coverage Helper Functions ──────────────────────────────────────
@@ -424,14 +430,20 @@ export class AgentLoop {
         }),
       },
       workflowState: WorkflowState.INIT,
-      cognition: new CognitiveEngine({ storagePath: path.resolve(process.cwd(), '.cognition') }),
+      cognition: new CognitiveEngine({
+        storagePath: path.resolve(process.cwd(), '.cognition'),
+        learnedEntityPort: options.cognition?.learnedEntities,
+        siteId: options.cognition?.siteId,
+        sessionId: options.cognition ? options.sessionId : undefined,
+        sessionTimestamp: options.cognition?.sessionTimestamp,
+      }),
     };
 
     logger.info(`[STATE] session started for ${options.target.url}`);
 
     // ── Cognitive Engine: Session start — retrieve relevant experiences ──
     if (context.cognition) {
-      const sessionStart = context.cognition.onSessionStart(options.target.url, options.config.strategy);
+      const sessionStart = await context.cognition.onSessionStart(options.target.url, options.config.strategy);
       if (sessionStart.prompt) {
         sessionLog.append("system/note", {
           note: `[Cognition] 历史经验:\n${sessionStart.prompt}`,
@@ -637,7 +649,7 @@ export class AgentLoop {
       }));
         
       // Save to cognitive engine
-      context.cognition.onSessionEnd(
+      await context.cognition.onSessionEnd(
         context.target.url,
         outcome,
         findings,

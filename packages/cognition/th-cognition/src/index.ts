@@ -32,3 +32,38 @@ export { ExperienceRetriever, type RetrievedExperience } from "./context/experie
 
 // ─── Cognitive Engine ───
 export { CognitiveEngine, type CognitiveConfig } from "./cognitive-engine.js";
+
+// Shared Cognition identity and provenance contracts
+export {
+  createCognitionEntityIdentity,
+  createCognitionPatternIdentity,
+  validateCognitionScope,
+  validateCognitionIdentityInput,
+  validateCognitionProvenance,
+  readLegacyCognitionId,
+} from "./identity.js";
+export type {
+  CognitionEntityKind,
+  CognitionScope,
+  CanonicalCognitionEntityIdentity,
+  CognitionSourceOccurrenceIdentity,
+  CognitionProvenance,
+  CognitionPatternIdentityInput,
+  CognitionIdentityInput,
+  LegacyCognitionId,
+} from "./identity.js";
+export { mapLegacyCognitionRows } from "./legacy-mapping.js";
+export type {
+  LegacyCognitionEpisodeInput,
+  LegacyCognitionKnowledgeInput,
+  LegacyCognitionProcedureInput,
+  LegacyCognitionPatternInput,
+  LegacyCognitionInput,
+  CognitionLegacyMapping,
+  CognitionLegacyMappingReport,
+} from "./legacy-mapping.js";
+export type {
+  CognitionLearnedEntityPort,
+  CognitionSessionLookup,
+  CognitionSessionRecord,
+} from './authority-port.js';

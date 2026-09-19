@@ -307,6 +307,9 @@ importers:
 
   packages/persistence/th-persistence:
     dependencies:
+      '@test-harness/th-cognition':
+        specifier: workspace:*
+        version: link:../../cognition/th-cognition
       '@test-harness/th-core':
         specifier: workspace:*
         version: link:../../core/th-core

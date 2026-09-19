@@ -32,7 +32,7 @@ export const SessionDetail: React.FC = () => {
     }
   }, [id, fetchSession]);
 
-  const isActive: boolean = !!(currentSession?.status === 'running' || currentSession?.status === 'pending' || currentSession?.status === 'planning' || currentSession?.status === 'executing' || currentSession?.status === 'cancelling');
+  const isActive: boolean = !!(currentSession?.status === 'queued' || currentSession?.status === 'running' || currentSession?.status === 'pending' || currentSession?.status === 'planning' || currentSession?.status === 'executing' || currentSession?.status === 'cancelling');
 
   // Load activities from metadata for completed sessions
   const historicalActivities: AgentActivity[] = useMemo(() => {

@@ -13,6 +13,7 @@ import type { JobData } from "@test-harness/th-queue";
 import type {
   DatabaseRepositories,
 } from "@test-harness/th-persistence";
+import type { AuthorityServices, SiteProfileAuthorityRecord } from '@test-harness/th-persistence/authority';
 import type { LLMProvider } from "@test-harness/th-protocol";
 import type {
   SessionStatusReason,
@@ -30,29 +31,29 @@ import {
   type SessionConfig,
   type Finding,
 } from "@test-harness/th-protocol";
-import { THContainer, valueProvider } from "@test-harness/th-core";
+import { normalizeCanonicalOrigin, THContainer, valueProvider } from "@test-harness/th-core";
 import {
   BrowserDriverDefinition,
   PlaywrightBrowserProvider,
-  loadSiteProfile,
+  SiteProfileCapabilityDefinition,
   enrichSiteProfile,
-  saveSiteProfile,
   createDefaultSiteProfile,
+  type CachedElement,
+  type SiteProfileCapabilityRecord,
 } from "@test-harness/th-browser";
 import type { SiteHints } from "@test-harness/th-agent";
 import { ToolRegistry, createAllTools, createMCPModeTools, createReportFindingTool, closeBrowser } from "@test-harness/th-tools";
-import { AgentLoop } from "@test-harness/th-agent";
+import { AgentLoop, createDurableSessionPersistenceStore } from "@test-harness/th-agent";
 import { mapStreamEventToActivity } from "../stream-transport.js";
 import { calculateScore } from "@test-harness/th-report";
 import fs from "node:fs";
-import path from "node:path";
 
 export interface TestSessionJobProcessorOptions {
   repos: DatabaseRepositories;
+  authority: AuthorityServices;
   llm: LLMProvider;
   wsHandler?: { broadcast(event: { type: string; [key: string]: unknown }): void };
 }
-
 /**
  * Worker log level from env: TH_LOG_LEVEL=debug enables debug output.
  * Default info — session lifecycle, status changes, errors.
@@ -183,11 +184,13 @@ async function terminalizeWorkerResult(
 }
 export class TestSessionJobProcessor implements JobProcessor<JobData> {
   private readonly repos: DatabaseRepositories;
+  private readonly authority: AuthorityServices;
   private readonly llm: LLMProvider;
   private readonly wsHandler?: { broadcast(event: { type: string; [key: string]: unknown }): void };
 
   constructor(opts: TestSessionJobProcessorOptions) {
     this.repos = opts.repos;
+    this.authority = opts.authority;
     this.llm = opts.llm;
     this.wsHandler = opts.wsHandler;
   }
@@ -237,6 +240,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
     if (!session) {
       throw new Error(`Session "${sessionId}" not found`);
     }
+    const requestMetadata = await this.authority.metadata.request.read(sessionId);
 
     const observer = new CancellationObserver(this.repos, sessionId);
     observer.start();
@@ -246,15 +250,14 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
 
     try {
       // ── Ensure site profile exists in DB ──
-    const siteHostname = normalizeToHostname(session.targetUrl);
-    let siteProfile = await this.repos.sites.findByBaseUrl(siteHostname);
-    if (!siteProfile) {
-      siteProfile = await this.repos.sites.create({
-        name: siteHostname,
-        baseUrl: siteHostname,
-      });
-      wlog(`created site profile: ${siteHostname} (${siteProfile.id})`);
-    }
+    const canonicalOrigin = normalizeCanonicalOrigin(session.targetUrl);
+    const ensuredProfile = await this.authority.sites.ensure({
+      canonicalOrigin,
+      name: new URL(canonicalOrigin).hostname,
+      idempotency: { idempotencyKey: `worker-site-ensure:${sessionId}` },
+    });
+    let siteProfile = ensuredProfile.result.record;
+    if (ensuredProfile.result.created) wlog(`created site profile: ${canonicalOrigin} (${siteProfile.id})`);
 
       // Update status to planning
       const planningTransition = await this.repos.sessions.transitionStatus(sessionId, {
@@ -276,6 +279,23 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
 
       // ── Build container & dependencies ──
       const container = new THContainer();
+      container.register(SiteProfileCapabilityDefinition, valueProvider({
+        binding: { profileId: siteProfile.id, canonicalOrigin, sessionId },
+        read: async () => toSiteProfileCapabilityRecord(
+          await requiredSiteProfile(this.authority.sites.findById(siteProfile.id), siteProfile.id),
+        ),
+        updateName: async (name: string, key: string) => toSiteProfileCapabilityRecord((await this.authority.sites.update({
+          scope: { kind: 'profile', profileId: siteProfile.id },
+          name,
+          idempotency: { idempotencyKey: key },
+        })).result),
+        replaceLocatorCache: async (entries: readonly CachedElement[], key: string) =>
+          toSiteProfileCapabilityRecord((await this.authority.sites.replaceLocatorCache({
+            scope: { kind: 'profile', profileId: siteProfile.id },
+            entries,
+            idempotency: { idempotencyKey: key },
+          })).result),
+      }));
       const useMCPTools = process.env.BROWSER_MODE === "mcp";
 
       // ── Tool registry ──
@@ -283,7 +303,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       if (useMCPTools) {
         // MCP mode: connect to Playwright MCP server directly, no wrapper needed
         const mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:3001/sse";
-        const mcpTools = await createMCPModeTools(mcpUrl);
+        const mcpTools = await createMCPModeTools(mcpUrl, container);
         for (const tool of mcpTools) {
           registry.register(tool);
         }
@@ -330,7 +350,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         strategy: typeof rawConfig.strategy === "string" ? rawConfig.strategy : "adaptive",
         maxTurns: typeof rawConfig.maxTurns === "number" ? rawConfig.maxTurns : 99,
         maxRetriesPerAction: typeof rawConfig.maxRetriesPerAction === "number" ? rawConfig.maxRetriesPerAction : 3,
-        instructions: session.metadata?.instructions as string | undefined ?? instructions,
+        instructions: requestMetadata?.instructions as string | undefined ?? instructions,
         testType: typeof rawConfig.testType === "string" ? rawConfig.testType as any : undefined,
         llm: {
           provider: this.llm.id,
@@ -414,11 +434,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       // ── Build SiteHints from profile ──
       const siteHints: SiteHints | undefined = (() => {
         try {
-          const profile = loadSiteProfile(targetUrl);
-          if (!profile) return undefined;
-          const hints: SiteHints = { name: profile.name };
-          // We could extract auth patterns here if stored in the profile
-          return hints;
+          return { name: siteProfile.name };
         } catch {
           return undefined;
         }
@@ -428,7 +444,7 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       const loop = new AgentLoop();
 
       // Extract uploaded images from session metadata for vision-capable LLMs
-      const uploadedImages = (session.metadata?.uploadedImages as string[] | undefined) ?? [];
+      const uploadedImages = (requestMetadata?.uploadedImages as string[] | undefined) ?? [];
       
       const result = await loop.run({
         sessionId: sessionId,
@@ -439,8 +455,11 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         eventBus: container.events,
         container,
         siteHints,
+        sessionPersistenceStore: createDurableSessionPersistenceStore(this.authority.metadata.p2e),
         signal: observer.signal,
         images: uploadedImages,
+        cognition: { siteId: siteProfile.id, sessionTimestamp: Date.parse(session.createdAt),
+          learnedEntities: this.authority.cognition },
       });
       agentSettled = true;
 
@@ -458,6 +477,13 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         return { sessionId, status: terminal.status, skipped: true };
       }
       const status = terminal.status;
+
+      if (status === 'completed') {
+        await this.authority.sites.incrementMetric({
+          scope: { kind: 'session', profileId: siteProfile.id, sessionId },
+        });
+        siteProfile = await requiredSiteProfile(this.authority.sites.findById(siteProfile.id), siteProfile.id);
+      }
 
       // A cancelled terminalization has no normal post-processing permission.
       // Release event subscriptions/browser resources before returning.
@@ -506,13 +532,16 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
       }
 
       const score = calculateScore(collectedFindings);
-      await this.repos.sessions.updateMetadata(sessionId, {
-        summary: result.summary ?? "",
-        findings: collectedFindings,
-        turns: result.turns,
-        activities: collectedActivities,
-        score,
-        executionSummary,
+      await this.authority.metadata.workerResult.replace({
+        sessionId,
+        fields: {
+          summary: result.summary ?? "",
+          findings: collectedFindings,
+          turns: result.turns,
+          activities: collectedActivities,
+          score,
+          executionSummary,
+        },
       });
 
       this.broadcast("session:update", sessionId, { status });
@@ -525,15 +554,12 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
 
       // ── Self-learning: enrich site profile from this session ──
       try {
-        const existingProfile = loadSiteProfile(targetUrl);
-        // Convert SiteProfileData to SiteProfile for enrichment
-        const siteProfileForEnrich = existingProfile
-          ? {
-              ...createDefaultSiteProfile(existingProfile.name, existingProfile.baseUrl),
-              elementCache: existingProfile.elementCache,
-              updatedAt: existingProfile.updatedAt,
-            }
-          : null;
+        const existingCache = parseLocatorCache(siteProfile.elementCache);
+        const siteProfileForEnrich = {
+          ...createDefaultSiteProfile(siteProfile.name, canonicalOrigin),
+          elementCache: existingCache,
+          updatedAt: Date.parse(siteProfile.updatedAt),
+        };
 
         const enrichment = enrichSiteProfile(
           siteProfileForEnrich,
@@ -550,29 +576,14 @@ export class TestSessionJobProcessor implements JobProcessor<JobData> {
         );
 
         wdebug(`site profile enrichment: ${enrichment.summary}`);
-        // Always save the enriched profile back to disk
-        const enrichedData = {
-          name: siteProfileForEnrich?.name ?? extractHostname(targetUrl),
-          baseUrl: targetUrl,
-          elementCache: siteProfileForEnrich?.elementCache ?? [],
-          updatedAt: Date.now(),
-        };
-        saveSiteProfile(enrichedData);
+        siteProfile = (await this.authority.sites.replaceLocatorCache({
+          scope: { kind: 'profile', profileId: siteProfile.id },
+          entries: siteProfileForEnrich.elementCache,
+          idempotency: { idempotencyKey: `worker-site-cache:${siteProfile.id}:${sessionId}` },
+        })).result;
       } catch (err) {
         wwarn(`site profile enrichment failed: ${err}`);
       }
-
-      // ── Sync cognition data from files to DB ──
-      // CognitiveEngine.onSessionEnd() writes to .cognition/ files;
-      // we sync those into the structured DB so the Sites page can display them.
-      try {
-        await syncCognitionFilesToDB(this.repos, siteProfile.id, sessionId, targetUrl);
-      } catch (err) {
-        wwarn(`cognition sync to DB failed: ${err}`);
-      }
-
-      // Increment test count for this site
-      await this.repos.sites.incrementTestCount(siteProfile.id);
 
       // Close browser to prevent orphan windows
       if (useMCPTools) {
@@ -781,97 +792,30 @@ Respond with ONLY the JSON object, no markdown.`;
   }
 }
 
-/** Extract hostname from URL for site profile naming */
-function extractHostname(url: string): string {
+function parseLocatorCache(value: string): CachedElement[] {
   try {
-    return new URL(url).hostname;
+    const parsed = JSON.parse(value || '[]') as unknown;
+    return Array.isArray(parsed) ? parsed as CachedElement[] : [];
   } catch {
-    return url;
+    return [];
   }
 }
 
-/** Normalize URL to hostname (without www. prefix) — matches API normalization */
-function normalizeToHostname(url: string): string {
-  try {
-    const parsed = new URL(url);
-    let hostname = parsed.hostname.toLowerCase();
-    if (hostname.startsWith("www.")) {
-      hostname = hostname.slice(4);
-    }
-    return hostname;
-  } catch {
-    let hostname = url.toLowerCase().trim();
-    if (hostname.startsWith("www.")) {
-      hostname = hostname.slice(4);
-    }
-    const slashIdx = hostname.indexOf("/");
-    if (slashIdx > 0) hostname = hostname.slice(0, slashIdx);
-    return hostname;
-  }
+async function requiredSiteProfile<T>(value: Promise<T | null>, profileId: string): Promise<T> {
+  const profile = await value;
+  if (!profile) throw new Error(`SiteProfile not found: ${profileId}`);
+  return profile;
 }
 
-/**
- * Sync cognition data from .cognition/ files into the structured DB.
- * The CognitiveEngine writes episodes/knowledge to JSON files during onSessionEnd().
- * This function reads those files and creates corresponding DB records.
- */
-const COGNITION_DIR = ".cognition";
-
-async function syncCognitionFilesToDB(
-  repos: DatabaseRepositories,
-  siteId: string,
-  sessionId: string,
-  targetUrl: string,
-): Promise<void> {
-  if (!fs.existsSync(COGNITION_DIR)) return;
-
-  // Sync episodes
-  const episodesPath = path.join(COGNITION_DIR, "episodes.json");
-  if (fs.existsSync(episodesPath)) {
-    try {
-      const episodes = JSON.parse(fs.readFileSync(episodesPath, "utf-8"));
-      for (const ep of episodes) {
-        if (!ep.id) continue;
-        // Check if already synced
-        const existing = await repos.cognition.listEpisodesBySite(siteId);
-        if (existing.find(e => e.id === ep.id)) continue;
-
-        await repos.cognition.createEpisode({
-          siteId,
-          sessionId: ep.sessionId ?? sessionId,
-          type: ep.type ?? "session_summary",
-          outcome: ep.outcome ?? "neutral",
-          description: ep.description ?? "",
-          data: JSON.stringify(ep),
-          timestamp: ep.timestamp ?? Date.now(),
-        });
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }
-
-  // Sync semantic knowledge
-  const semanticPath = path.join(COGNITION_DIR, "semantic.json");
-  if (fs.existsSync(semanticPath)) {
-    try {
-      const knowledge = JSON.parse(fs.readFileSync(semanticPath, "utf-8"));
-      for (const k of knowledge) {
-        if (!k.id) continue;
-        const existing = await repos.cognition.getKnowledge(k.id);
-        if (existing) continue;
-
-        await repos.cognition.createKnowledge({
-          siteId,
-          type: k.type ?? "site_characteristic",
-          title: k.title ?? "Untitled",
-          content: k.content ?? "",
-          confidence: k.confidence ?? 0.5,
-          tags: JSON.stringify(k.tags ?? []),
-        });
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }
+function toSiteProfileCapabilityRecord(row: SiteProfileAuthorityRecord): SiteProfileCapabilityRecord {
+  if (!row.canonicalOriginKey) throw new Error(`SiteProfile ${row.id} has no canonical origin`);
+  return {
+    id: row.id,
+    canonicalOrigin: row.canonicalOriginKey,
+    name: row.name,
+    elementCache: parseLocatorCache(row.elementCache),
+    testCount: row.testCount,
+    lastTestedAt: row.lastTestedAt,
+    updatedAt: row.updatedAt,
+  };
 }
