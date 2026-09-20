@@ -20,7 +20,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts",
-    "p6:rehearsal-preflight": "tsx src/cutover/cli.ts"
+    "p6:rehearsal-preflight": "tsx src/cutover/cli.ts",
+    "p6:final-backup-capture": "tsx src/cutover/final-backup-cli.ts",
+    "p6:runtime-attest": "tsx src/cutover/runtime-attestation-cli.ts",
+    "p6:runtime-package": "tsx src/cutover/runtime-package-cli.ts"
   },
   "dependencies": {
     "@test-harness/th-cognition": "workspace:*",

@@ -11,13 +11,10 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..", "..", "..", "..");
-const dotenv = await import("dotenv");
-dotenv.config({ path: path.join(rootDir, ".env"), override: true });
-dotenv.config({ path: path.join(rootDir, ".env.local"), override: true });
+const { loadServerApplication } = await import("./bootstrap.js");
+const { TestHarnessServer } = await loadServerApplication(rootDir);
 
-import { TestHarnessServer } from "./app.js";
-
-export { TestHarnessServer } from "./app.js";
+export { TestHarnessServer };
 export type { TestHarnessServerOptions } from "./app.js";
 
 console.log("[Server] Starting Test-Harness...");

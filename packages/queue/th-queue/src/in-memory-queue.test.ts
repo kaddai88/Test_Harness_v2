@@ -177,6 +177,39 @@ describe("InMemoryQueue", () => {
     ).rejects.toThrow("Queue is closed");
   });
 
+  it("pauses consumption while retaining queued jobs and proves quiescence", async () => {
+    let release!: () => void;
+    const active = new Promise<void>((resolve) => { release = resolve; });
+    queue = new InMemoryQueue({ concurrency: 1 });
+    queue.process("test:execute", { process: async () => active });
+    await queue.add("test:execute", { sessionId: "active" });
+    await queue.add("test:execute", { sessionId: "waiting" });
+    await wait(20);
+
+    await queue.pause();
+    expect(await queue.inventory()).toMatchObject({
+      state: "paused", active: 1, waiting: 1, reserved: 0, isQuiescent: false,
+    });
+
+    release();
+    await wait(20);
+    expect(await queue.inventory()).toMatchObject({
+      state: "paused", active: 0, waiting: 1, isQuiescent: true,
+    });
+
+    await queue.resume();
+    await wait(20);
+    expect(await queue.inventory()).toMatchObject({ state: "open", active: 0, waiting: 0 });
+  });
+
+  it("keeps close distinct from pause and cannot resume a closed queue", async () => {
+    await queue.pause();
+    expect((await queue.inventory()).state).toBe("paused");
+    await queue.close();
+    expect(await queue.inventory()).toMatchObject({ state: "closed", isQuiescent: false });
+    await expect(queue.resume()).rejects.toThrow("Queue is closed");
+  });
+
   // ── no processor ──
 
   it("job stays waiting if no processor is registered", async () => {

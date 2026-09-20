@@ -37,8 +37,7 @@ export async function handleStatus(
   const completedSessions = await deps.repos.sessions.count({ status: "completed" });
   const failedSessions = await deps.repos.sessions.count({ status: "failed" });
 
-  const waitingJobs = await deps.queue.getJobs(undefined, "waiting");
-  const activeJobs = await deps.queue.getJobs(undefined, "active");
+  const inventory = await deps.queue.inventory();
 
   sendJson(res, 200, {
     status: "ok",
@@ -49,9 +48,6 @@ export async function handleStatus(
       completed: completedSessions,
       failed: failedSessions,
     },
-    queue: {
-      waiting: waitingJobs.length,
-      active: activeJobs.length,
-    },
+    queue: inventory,
   });
 }

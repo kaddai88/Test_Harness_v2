@@ -15,7 +15,7 @@ import {
   type DatabaseRuntime,
 } from "@test-harness/th-persistence";
 import { createInMemoryQueue, type TaskQueue } from "@test-harness/th-queue";
-import { APIServer } from "@test-harness/th-api";
+import { APIServer, CutoverControlPlane } from "@test-harness/th-api";
 import { WorkerBootstrap } from "@test-harness/th-worker";
 import { QwenProvider } from "@test-harness/th-llm-qwen";
 import { OpenAIProvider } from "@test-harness/th-llm-openai";
@@ -272,6 +272,10 @@ export class TestHarnessServer {
       authority: this.db.authority,
       queue: this.queue,
       envPath: process.env.ENV_PATH ?? ".env",
+      cutoverControl: new CutoverControlPlane({
+        token: process.env.CUTOVER_CONTROL_TOKEN,
+        auditPath: process.env.CUTOVER_CONTROL_AUDIT_PATH,
+      }),
     });
     await this.api.start();
 

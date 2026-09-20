@@ -11,6 +11,7 @@ export type {
   JobStatus,
   JobType,
   QueueOptions,
+  QueueInventory,
   TaskQueue,
 } from "./types.js";
 

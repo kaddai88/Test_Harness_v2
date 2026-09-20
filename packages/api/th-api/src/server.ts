@@ -14,6 +14,7 @@ import { dispatchSettingsRoute } from "./routes/settings.js";
 import { dispatchSiteRoute } from "./routes/sites.js";
 import { handleHealth, handleStatus } from "./routes/health.js";
 import { WebSocketHandler } from "./websocket.js";
+import { CutoverControlPlane, type CutoverControlAction } from "./cutover-control.js";
 
 export interface APIServerOptions {
   port?: number;
@@ -21,6 +22,7 @@ export interface APIServerOptions {
   authority: AuthorityServices;
   queue: TaskQueue;
   envPath?: string;
+  cutoverControl?: CutoverControlPlane;
 }
 
 export class APIServer {
@@ -31,6 +33,7 @@ export class APIServer {
   private readonly authority: AuthorityServices;
   private readonly queue: TaskQueue;
   private readonly envPath: string;
+  private readonly cutoverControl: CutoverControlPlane;
 
   constructor(opts: APIServerOptions) {
     this.port = opts.port ?? 3000;
@@ -38,6 +41,7 @@ export class APIServer {
     this.authority = opts.authority;
     this.queue = opts.queue;
     this.envPath = opts.envPath ?? ".env";
+    this.cutoverControl = opts.cutoverControl ?? new CutoverControlPlane();
     this.ws = new WebSocketHandler();
 
     this.server = createServer((req, res) => {
@@ -79,7 +83,8 @@ export class APIServer {
 
   /** The underlying port. */
   getPort(): number {
-    return this.port;
+    const address = this.server.address();
+    return address && typeof address === "object" ? address.port : this.port;
   }
 
   // ── Internal ──
@@ -98,6 +103,57 @@ export class APIServer {
     }
 
     const pathname = getPathname(req.url);
+
+    if (pathname === "/api/v1/cutover/status" && req.method === "GET") {
+      sendJson(res, 200, { status: "ok", control: this.cutoverControl.status(), queue: await this.queue.inventory() });
+      return;
+    }
+
+    const controlMatch = /^\/api\/v1\/cutover\/controls\/(freeze-entry|confirm-frozen|release-read-only|enable-mutation|abort-restore-normal)$/.exec(pathname);
+    if (controlMatch && req.method === "POST") {
+      const token = req.headers["x-cutover-control-token"];
+      const actor = req.headers["x-cutover-actor"];
+      try {
+        const control = this.cutoverControl.transition(
+          controlMatch[1] as CutoverControlAction,
+          Array.isArray(token) ? token[0] : token,
+          Array.isArray(actor) ? actor[0] : actor,
+        );
+        sendJson(res, 200, { status: "ok", control, queue: await this.queue.inventory() });
+      } catch (error) {
+        sendJson(res, 403, { error: error instanceof Error ? error.message : "Cutover control rejected" });
+      }
+      return;
+    }
+
+    const queueControlMatch = /^\/api\/v1\/cutover\/queue\/(pause|resume)$/.exec(pathname);
+    if (queueControlMatch && req.method === "POST") {
+      const token = req.headers["x-cutover-control-token"];
+      const actor = req.headers["x-cutover-actor"];
+      const operation = queueControlMatch[1] === "pause" ? "queue-pause" : "queue-resume";
+      try {
+        const queue = await this.cutoverControl.performOperation(
+          operation,
+          Array.isArray(token) ? token[0] : token,
+          Array.isArray(actor) ? actor[0] : actor,
+          async () => {
+            if (operation === "queue-pause") await this.queue.pause();
+            else await this.queue.resume();
+            return this.queue.inventory();
+          },
+          (inventory) => inventory,
+        );
+        sendJson(res, 200, { status: "ok", control: this.cutoverControl.status(), queue });
+      } catch (error) {
+        sendJson(res, 403, { error: error instanceof Error ? error.message : "Queue control rejected" });
+      }
+      return;
+    }
+
+    if (!this.cutoverControl.permitsMutationRequest(req.method)) {
+      sendJson(res, 503, { error: "mutation_capable_traffic_blocked", control: this.cutoverControl.status() });
+      return;
+    }
 
     // Health / status
     if (pathname === "/api/v1/health" && req.method === "GET") {
@@ -125,6 +181,7 @@ export class APIServer {
     // Report routes
     const handled3 = await dispatchReportRoute(req, res, {
       repos: this.repos,
+      readOnly: !this.cutoverControl.permitsMutationRequest("POST"),
     }, pathname);
     if (handled3) return;
 

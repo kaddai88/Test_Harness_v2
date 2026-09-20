@@ -46,10 +46,21 @@ return to contract review; the operator MUST NOT substitute an equivalent value.
 | `EVD-V9-PONR` | Observed fact | v9 `success-clone/p6-ponr-audit.jsonl` plus focused regression results | accepted PONR was audited in v9; ambiguous PONR handling passed focused tests |
 | `EVD-DEC-02` | Observed fact | `docs/P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-02` | accountable system owner approved Billy Xu (admin) as `DEC-02`; that decision does not itself approve any other DEC or SP-0 |
 | `EVD-DEC-03` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-03` | accountable system owner approved Billy Xu (admin) as `DEC-03` |
+| `EVD-DEC-01` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-01` | `DEC-02` approved Billy Xu (admin) as live cutover operator under `GOV-EX-01`; no SP or live execution approval implied |
+| `EVD-DEC-04` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-04` | `DEC-03` approved Billy Xu (admin) as rollback owner under `GOV-EX-01`; rollback commands remain unapproved |
+| `EVD-DEC-06` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-06` | `DEC-03` approved Billy Xu (admin) as queue/worker drain owner under `GOV-EX-01`; drain commands remain unapproved |
+| `EVD-DEC-07` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-07` | `DEC-03` approved Billy Xu (admin) as deployment owner under `GOV-EX-01`; `DEC-14` separately approves the exact deployment procedure without authorizing execution |
+| `EVD-DEC-05` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-05` | `DEC-02` approved Billy Xu (admin) as evidence custodian; evidence root and final backup path remain unapproved |
+| `EVD-DEC-08` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-08` | `DEC-02` approved the exact `2026-09-20T20:00:00+08:00` to `2026-09-20T23:00:00+08:00` maintenance window |
+| `EVD-DEC-09` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-09` | `DEC-03` approved a 90-minute maximum freeze duration and 60-minute rollback reserve; insufficient remaining reserve is fail-closed |
+| `EVD-DEC-10` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-10` | `DEC-03` approved `2026-09-20T21:30:00+08:00` as the latest safe writer-activation time; later activation is `NO-GO` |
+| `EVD-DEC-14` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-14` | `DEC-07` approved the exact post-corrective runtime package, artifact/manifest/attestation identities, Node runtime, environment, and foreground deployment command; the command was not executed and no SP or live action is authorized |
+| `EVD-DEC-16` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-16` | `DEC-02` approved exact SP approver eligibility and the create-new append-only JSONL evidence channel; no SP decision is approved |
+| `EVD-DEC-17` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-17` | `DEC-03` approved the exact create-new, append-only JSONL incident record and SHA-256 finalization contract for run `2026-09-19-root-json-live-01` |
 | `EVD-ROLE-02-03` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#role-concentration-dec-02-dec-03` | accountable system owner explicitly accepted `DEC-02 == DEC-03` role concentration |
 | `EVD-GOV-EX-01` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#gov-ex-01-single-operator-governance-exception` | accountable system owner approved the exact, role-enumerated single-operator exception; eligibility only, with no DEC, SP, authorization 2, or live execution approval implied |
 | `REQ-AUTH2` | Stakeholder request | this contract | prepare one explicit live coordinated-cutover decision; no authorization yet |
-| `ASM-LIVE-WINDOW` | Assumption to validate | section 4 | remaining live execution roles, window, commands, and operational ownership remain unapproved |
+| `ASM-LIVE-WINDOW` | Assumption to validate | section 4 | remaining admission, queue, backup, traffic-release, and stop-point decisions remain unapproved |
 
 The accepted v9 evidence establishes authorization 1 completion. It is not the
 final post-freeze backup and cannot substitute for in-window evidence.
@@ -62,24 +73,32 @@ approved only through the explicit authorization record required by `SP-0`.
 
 | Item | Exact value | Review status |
 |---|---|---|
-| Provider | `json` | frozen candidate |
+| Authority storage representation | `json` | frozen candidate |
 | Working directory | `E:\Projects\Test-Harness` | frozen candidate |
 | Authority datastore | `E:\Projects\Test-Harness\data\testharness.json` | frozen candidate |
 | Cognition legacy root | `E:\Projects\Test-Harness\.cognition` | frozen candidate |
 | SiteProfile legacy root | `E:\Projects\Test-Harness\.site-profiles` | frozen candidate |
 | Resolution manifest | `E:\Projects\Test-Harness\.p6-rehearsal\example-com-resolution-v2.json` | frozen candidate |
 | Resolution SHA-256 | `f6965b6b84d3727011257e25947ae5334c94a3b6f1c36682da232e4951aac8d0` | reviewed |
-| Artifact identity | `eebfa1e708be2bc295b1a359a1927e1f3b8f64c02b3c71fd16558d971a9e0b92` | reviewed rehearsal identity; live approval pending |
-| Configuration identity | `022247208906a6a2a91b52e4933f507cf6dc0db2ff75ae2172733aaeba67f4dc` | reviewed rehearsal identity; live approval pending |
+| v9 rehearsal artifact identity | `eebfa1e708be2bc295b1a359a1927e1f3b8f64c02b3c71fd16558d971a9e0b92` | reviewed historical rehearsal identity; not the production runtime identity |
+| v9 rehearsal configuration identity | `022247208906a6a2a91b52e4933f507cf6dc0db2ff75ae2172733aaeba67f4dc` | reviewed historical rehearsal identity |
 | v9 evidence SHA-256 | `dab95cf4718d288bfb528eaf7975f4d0adb3df1f1151eb6329c0546fe433de1d` | reviewed and immutable |
 | v9 snapshot ID | `a12c573b3add6b4e15d2f69f11e0cead4d02e41d5f20edfdeb691b5d08d1e8bb` | reviewed and immutable |
 | v9 snapshot manifest SHA-256 | `592f9b14a6101aeafa2736418c0f42a96b1def59f335cd12fa17353b9d489dfa` | reviewed and immutable |
 | v9 PONR audit SHA-256 | `f1d03a06ae5ba43c4d11e43980b759db603a3e331be0e0a0282585cf851b8830` | reviewed and immutable |
+| Runtime package root | `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\runtime-package-v2` | `DEC-14` approved; immutable candidate for live execution review |
+| Deployed runtime entrypoint | `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\runtime-package-v2\dist\index.js` | `DEC-14` approved |
+| Runtime artifact identity | `2c5c6fa14ff940ce1916c96bebd8229c20045147818427d06411dd3f91e78e72` | `DEC-14` approved; execution not authorized |
+| Runtime manifest SHA-256 | `2713d894f20f6a502ade2aa6b55042bb7ef2853593f76736d107ff0a03ea6ac4` | `DEC-14` approved |
+| Runtime attestation SHA-256 | `4c24c92490c35f7c083f57db1c20b65d1de3b43e60516c4cfd66b03e67811625` | `DEC-14` approved |
+| Runtime provider/topology | `node` / `single-process` | `DEC-14` approved |
+| Node runtime | `C:\Program Files\nodejs\node.exe` / `v22.23.2` | `DEC-14` approved |
 
-The artifact identity MUST bind the production runtime bytes or an approved,
-reproducible deployment package derived from exactly those bytes. The live
-deployment mechanism and verification command are `PENDING`; source-manifest
-identity alone MUST NOT be silently promoted into a deployment attestation.
+The approved runtime artifact identity binds the post-corrective deployable
+package and exact package root. `DEC-14` approves the deployment procedure and
+runtime-byte attestation only. It does not authorize running the command, and
+the historical v9 artifact/configuration identities remain rehearsal evidence
+only; they MUST NOT substitute for the approved production runtime identity.
 
 ### 3.1 Rehearsed ten-file baseline
 
@@ -112,23 +131,23 @@ evidence location is recorded in the signed authorization record.
 
 | Field ID | Required decision | Current value/status | Owner required |
 |---|---|---|---|
-| `DEC-01` | Live cutover operator | `PENDING`; Billy Xu (admin) is eligible under approved `GOV-EX-01`, but is not approved for this role | authorization-2 approver |
+| `DEC-01` | Live cutover operator | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-01` | authorization-2 approver |
 | `DEC-02` | Authorization-2 approver | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin); `2026-09-19T10:48:18+08:00`; evidence `docs/P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-02`; independent from `DEC-01` by default | accountable system owner |
 | `DEC-03` | Incident commander | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin); `2026-09-19T10:56:59+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-03`; complete critical-window presence required | accountable system owner |
-| `DEC-04` | Rollback owner | `PENDING` | incident commander |
-| `DEC-05` | Evidence custodian | `PENDING` | authorization-2 approver |
-| `DEC-06` | Queue/worker drain owner | `PENDING` | incident commander |
-| `DEC-07` | Deployment owner | `PENDING` | incident commander |
-| `DEC-08` | Maintenance-window start/end and timezone | `PENDING`; timezone MUST be explicit | authorization-2 approver |
-| `DEC-09` | Maximum freeze duration | `PENDING` | incident commander |
-| `DEC-10` | Latest safe writer-activation time | `PENDING` | incident commander |
+| `DEC-04` | Rollback owner | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-04`; rollback command remains `PENDING` | incident commander |
+| `DEC-05` | Evidence custodian | `APPROVED`: Billy Xu (admin); approver/decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-05`; evidence root and final backup path remain `PENDING` | authorization-2 approver |
+| `DEC-06` | Queue/worker drain owner | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-06`; drain commands remain `PENDING` | incident commander |
+| `DEC-07` | Deployment owner | `APPROVED`: Billy Xu (admin); decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-07`; exact procedure is separately approved by `DEC-14` | incident commander |
+| `DEC-08` | Maintenance-window start/end and timezone | `APPROVED`: `2026-09-20T20:00:00+08:00` through `2026-09-20T23:00:00+08:00`; `UTC+08:00`; approver/decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-08` | authorization-2 approver |
+| `DEC-09` | Maximum freeze duration | `APPROVED`: maximum freeze `90 minutes`; rollback reserve `60 minutes`; fail-closed if reserve is unavailable; approver/decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-09` | incident commander |
+| `DEC-10` | Latest safe writer-activation time | `APPROVED`: `2026-09-20T21:30:00+08:00`; later activation is `NO-GO`; approver/decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-10` | incident commander |
 | `DEC-11` | Exact admission-freeze command and verification query | `PENDING` | deployment owner |
 | `DEC-12` | Exact worker/queue pause, drain, and inspection commands | `PENDING` | queue/worker owner |
 | `DEC-13` | Final backup output path and retention/cleanup owner | `PENDING`; path MUST not exist before capture | evidence custodian |
-| `DEC-14` | Exact deployment command and runtime artifact verification | `PENDING` | deployment owner |
+| `DEC-14` | Exact deployment command and runtime artifact verification | `APPROVED`: post-corrective runtime package v2; artifact `2c5c6fa14ff940ce1916c96bebd8229c20045147818427d06411dd3f91e78e72`; manifest SHA-256 `2713d894f20f6a502ade2aa6b55042bb7ef2853593f76736d107ff0a03ea6ac4`; attestation SHA-256 `4c24c92490c35f7c083f57db1c20b65d1de3b43e60516c4cfd66b03e67811625`; foreground Node `v22.23.2`; Billy Xu (admin), acting as `DEC-07`; `2026-09-20T11:20:13+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-14`; procedure only, not executed | deployment owner |
 | `DEC-15` | Exact pre-PONR traffic-release command | `PENDING` | deployment owner |
-| `DEC-16` | `SP-1` through `SP-4` approvers and communication channel | `PENDING` | authorization-2 approver |
-| `DEC-17` | Post-PONR incident/escalation channel | `PENDING` | incident commander |
+| `DEC-16` | `SP-1` through `SP-4` approvers and communication channel | `APPROVED`: Billy Xu (admin) eligible as each `SP-1` through `SP-4` approver; create-new append-only JSONL at `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\sp-approvals.jsonl`; approver/decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-16`; all SP decisions remain `NOT APPROVED` | authorization-2 approver |
+| `DEC-17` | Post-PONR incident/escalation channel | `APPROVED`: create-new append-only JSONL at `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\incident-audit.jsonl`; writer/retention owner Billy Xu (admin); finalize with SHA-256 bound into `EVD-LIVE-15`; decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-17` | incident commander |
 
 ### 4.1 Role selection constraints
 
@@ -570,22 +589,22 @@ Secrets are referenced by identifier only and MUST NOT be copied into evidence.
 |---|---|---|---|---|
 | `LCC-01` | exact live target/provider/path identity | 3 | `EVD-LIVE-02` exact match | ready for review |
 | `LCC-02` | approved artifact/config/resolution identities | 3 | identities and runtime-byte attestation | deployment command `PENDING` |
-| `LCC-03` | operator and maintenance window | 4 | `DEC-01`, `DEC-08`, `EVD-LIVE-03` | `PENDING` |
-| `LCC-04` | freeze entry conditions | 6 | all ten freeze checks pass | commands `PENDING` |
-| `LCC-05` | worker/queue drain criteria | 6 | active/reserved/in-flight = 0; consumption paused | commands/owner `PENDING` |
+| `LCC-03` | operator and maintenance window | 4 | `DEC-01`, `DEC-08`, `EVD-LIVE-03` | operator/window approved; execution `PENDING` |
+| `LCC-04` | freeze entry conditions | 6 | all ten freeze checks pass | time budget approved; commands `PENDING` |
+| `LCC-05` | worker/queue drain criteria | 6 | active/reserved/in-flight = 0; consumption paused | owner approved; commands `PENDING` |
 | `LCC-06` | final post-freeze backup | 7 | exact capture plus isolated restore | path/owner `PENDING` |
 | `LCC-07` | snapshot/hash/inventory acceptance | 3.1, 7 | ten-file exact match and bound manifest | defined |
 | `LCC-08` | import order and reconciliation | 8, 9 | SiteProfile first; exact counts; replay empty | defined |
-| `LCC-09` | writer-enable gate | 9 | `SP-2` plus runtime checks | approver `PENDING` |
+| `LCC-09` | writer-enable gate | 9 | `SP-2` plus runtime checks | SP approver eligible; SP decision/runtime checks `PENDING` |
 | `LCC-10` | `LIVE_PRE_PONR` | 10 | semantic hash plus zero mutation audit | defined |
 | `LCC-11` | first authority mutation/PONR | 11 | complete first-mutation audit | defined |
 | `LCC-12` | accepted versus ambiguous PONR | 11 | conservative outcome table | defined |
-| `LCC-13` | pre-PONR rollback | 12.1 | exact restore and rollback GO | owner `PENDING` |
-| `LCC-14` | post-PONR preservation/reconciliation | 12.2 | DB authority retained; separate reconciliation | escalation owner `PENDING` |
-| `LCC-15` | traffic-release gate | 13 | `SP-3` and separate `SP-4` | commands/approvers `PENDING` |
+| `LCC-13` | pre-PONR rollback | 12.1 | exact restore and rollback GO | owner approved; command sequence `PENDING` |
+| `LCC-14` | post-PONR preservation/reconciliation | 12.2 | DB authority retained; separate reconciliation | escalation channel approved; operational package incomplete |
+| `LCC-15` | traffic-release gate | 13 | `SP-3` and separate `SP-4` | SP approver eligible; commands/decisions `PENDING` |
 | `LCC-16` | NO-GO/abort matrix | 14 | fail-closed state-specific response | defined |
-| `LCC-17` | evidence and operator attestations | 15 | `EVD-LIVE-01` through `15` complete | custodian `PENDING` |
-| `LCC-18` | explicit stop points | 5 | `SP-0` through `SP-4` signed | approvers/channel `PENDING` |
+| `LCC-17` | evidence and operator attestations | 15 | `EVD-LIVE-01` through `15` complete | custodian approved; evidence root `PENDING` |
+| `LCC-18` | explicit stop points | 5 | `SP-0` through `SP-4` signed | SP approver/evidence channel approved; all SP decisions `PENDING` |
 
 ## 17. Authorization review checklist
 
@@ -629,12 +648,21 @@ P6 Phase 2-F authorization 1
 -> COMPLETE
 
 operational decisions
+-> DEC-01 APPROVED: Billy Xu (admin)
 -> DEC-02 APPROVED: Billy Xu (admin)
 -> DEC-03 APPROVED: Billy Xu (admin)
+-> DEC-04 APPROVED: Billy Xu (admin)
+-> DEC-06 APPROVED: Billy Xu (admin)
+-> DEC-07 APPROVED: Billy Xu (admin)
+-> DEC-05 APPROVED: Billy Xu (admin)
+-> DEC-08 APPROVED: 2026-09-20T20:00:00+08:00 to 2026-09-20T23:00:00+08:00
+-> DEC-09 APPROVED: 90-minute freeze / 60-minute rollback reserve
+-> DEC-10 APPROVED: latest writer activation 2026-09-20T21:30:00+08:00
+-> DEC-14 APPROVED: exact runtime package/identity/attestation and deployment procedure only; not executed
+-> DEC-16 APPROVED: SP approver eligibility and JSONL evidence channel only
+-> DEC-17 APPROVED: 2026-09-19-root-json-live-01 incident audit
 -> DEC-02 == DEC-03 ROLE CONCENTRATION ACCEPTED
--> DEC-01 PENDING; Billy Xu (admin) eligible under GOV-EX-01
--> DEC-04 / DEC-06 / DEC-07 CANDIDATE ONLY / NOT APPROVED
--> DEC-05 and DEC-08..17 PENDING
+-> DEC-11 / DEC-12 / DEC-13 / DEC-15 PENDING
 
 single-operator governance exception GOV-EX-01
 -> APPROVED: Billy Xu (admin), 2026-09-19T11:17:02+08:00

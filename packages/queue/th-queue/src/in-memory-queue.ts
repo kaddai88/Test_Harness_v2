@@ -11,6 +11,7 @@ import type {
   JobProcessor,
   JobStatus,
   JobType,
+  QueueInventory,
   QueueOptions,
   TaskQueue,
 } from "./types.js";
@@ -30,6 +31,7 @@ export class InMemoryQueue implements TaskQueue {
   private processors = new Map<JobType, JobProcessor>();
   private activeCount = 0;
   private closed = false;
+  private paused = false;
   private scheduleTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly concurrency: number;
@@ -93,6 +95,42 @@ export class InMemoryQueue implements TaskQueue {
     this.jobs.delete(id);
   }
 
+  async pause(): Promise<void> {
+    if (this.closed) throw new Error("Queue is closed");
+    this.paused = true;
+    if (this.scheduleTimer) {
+      clearTimeout(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (this.closed) throw new Error("Queue is closed");
+    this.paused = false;
+    this.schedule();
+  }
+
+  async inventory(): Promise<QueueInventory> {
+    let waiting = 0;
+    let delayed = 0;
+    let active = 0;
+    for (const job of this.jobs.values()) {
+      if (job.status === "waiting") waiting += 1;
+      if (job.status === "delayed") delayed += 1;
+      if (job.status === "active") active += 1;
+    }
+    return {
+      state: this.closed ? "closed" : this.paused ? "paused" : "open",
+      waiting,
+      delayed,
+      active,
+      reserved: 0,
+      queued: waiting + delayed,
+      // A paused queue can retain jobs while proving that no job is executing.
+      isQuiescent: !this.closed && this.paused && active === 0,
+    };
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     if (this.scheduleTimer) {
@@ -107,7 +145,7 @@ export class InMemoryQueue implements TaskQueue {
   // ── Internal scheduling ──
 
   private schedule(): void {
-    if (this.closed) return;
+    if (this.closed || this.paused) return;
     if (this.scheduleTimer) return;
     // Defer to avoid recursive scheduling during a running process call.
     this.scheduleTimer = setTimeout(() => {
@@ -117,7 +155,7 @@ export class InMemoryQueue implements TaskQueue {
   }
 
   private drain(): void {
-    if (this.closed) return;
+    if (this.closed || this.paused) return;
 
     while (this.activeCount < this.concurrency) {
       const next = this.pickNext();

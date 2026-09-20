@@ -9,6 +9,8 @@ import { sendJson, sendText, parseQuery, matchRoute } from "../http.js";
 
 export interface ReportRouteDeps {
   repos: DatabaseRepositories;
+  /** Read-only cutover traffic may render but must not populate the cache. */
+  readOnly?: boolean;
 }
 
 /** GET /api/v1/sessions/:id/report — get or generate a report. */
@@ -78,12 +80,14 @@ export async function handleGetReport(
   );
 
   // Persist for future requests
-  await deps.repos.reports.create({
-    sessionId: session.id,
-    format: output.format,
-    content: output.content,
-    data: output.data,
-  });
+  if (!deps.readOnly) {
+    await deps.repos.reports.create({
+      sessionId: session.id,
+      format: output.format,
+      content: output.content,
+      data: output.data,
+    });
+  }
 
   if (format === "json") {
     sendJson(res, 200, {

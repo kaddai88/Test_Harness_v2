@@ -8,6 +8,8 @@ export { APIServer } from "./server.js";
 export type { APIServerOptions } from "./server.js";
 
 export { WebSocketHandler } from "./websocket.js";
+export { CutoverControlPlane, cutoverControlTokenFingerprint } from "./cutover-control.js";
+export type { CutoverControlAction, CutoverControlOperation, CutoverControlPlaneOptions, CutoverControlStatus, CutoverTrafficState } from "./cutover-control.js";
 
 // HTTP helpers (for custom route handlers)
 export {
