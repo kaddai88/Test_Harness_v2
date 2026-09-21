@@ -1,6 +1,6 @@
 # P6 Phase 2-F Authorization 2 Live Coordinated Cutover Contract
 
-Status: `DRAFT FOR EXPLICIT REVIEW / DOCUMENTATION ONLY / AUTHORIZATION 2 NOT GRANTED`
+Status: `OPERATIONAL DECISIONS COMPLETE / DRAFT FOR EXPLICIT REVIEW / AUTHORIZATION 2 NOT GRANTED`
 
 This contract defines the decision and execution boundary for one coordinated
 Phase 2-F live cutover. It does not authorize entering a maintenance window,
@@ -48,19 +48,23 @@ return to contract review; the operator MUST NOT substitute an equivalent value.
 | `EVD-DEC-03` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-03` | accountable system owner approved Billy Xu (admin) as `DEC-03` |
 | `EVD-DEC-01` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-01` | `DEC-02` approved Billy Xu (admin) as live cutover operator under `GOV-EX-01`; no SP or live execution approval implied |
 | `EVD-DEC-04` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-04` | `DEC-03` approved Billy Xu (admin) as rollback owner under `GOV-EX-01`; rollback commands remain unapproved |
-| `EVD-DEC-06` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-06` | `DEC-03` approved Billy Xu (admin) as queue/worker drain owner under `GOV-EX-01`; drain commands remain unapproved |
+| `EVD-DEC-06` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-06` | `DEC-03` approved Billy Xu (admin) as queue/worker drain owner under `GOV-EX-01`; `DEC-12` separately approves the exact drain commands without authorizing execution |
 | `EVD-DEC-07` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-07` | `DEC-03` approved Billy Xu (admin) as deployment owner under `GOV-EX-01`; `DEC-14` separately approves the exact deployment procedure without authorizing execution |
-| `EVD-DEC-05` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-05` | `DEC-02` approved Billy Xu (admin) as evidence custodian; evidence root and final backup path remain unapproved |
+| `EVD-DEC-05` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-05` | `DEC-02` approved Billy Xu (admin) as evidence custodian; `DEC-13` separately approves the exact final-backup command, path, and retention without authorizing execution |
 | `EVD-DEC-08` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-08` | `DEC-02` approved the exact `2026-09-20T20:00:00+08:00` to `2026-09-20T23:00:00+08:00` maintenance window |
 | `EVD-DEC-09` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-09` | `DEC-03` approved a 90-minute maximum freeze duration and 60-minute rollback reserve; insufficient remaining reserve is fail-closed |
 | `EVD-DEC-10` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-10` | `DEC-03` approved `2026-09-20T21:30:00+08:00` as the latest safe writer-activation time; later activation is `NO-GO` |
+| `EVD-DEC-11` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-11` | `DEC-07` approved the exact admission/mutation freeze and status commands; no command was executed |
+| `EVD-DEC-12` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-12` | `DEC-06` approved the exact queue pause, inventory, quiescence, and restoration commands; no command was executed |
+| `EVD-DEC-13` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-13` | `DEC-05` approved the exact create-new capture-only final-backup command, path, and retention owner; no backup was captured |
 | `EVD-DEC-14` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-14` | `DEC-07` approved the exact post-corrective runtime package, artifact/manifest/attestation identities, Node runtime, environment, and foreground deployment command; the command was not executed and no SP or live action is authorized |
+| `EVD-DEC-15` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-15` | `DEC-07` approved the exact SP-3 read-only and separately SP-4-gated mutation commands; no command or SP was executed or approved |
 | `EVD-DEC-16` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-16` | `DEC-02` approved exact SP approver eligibility and the create-new append-only JSONL evidence channel; no SP decision is approved |
 | `EVD-DEC-17` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-17` | `DEC-03` approved the exact create-new, append-only JSONL incident record and SHA-256 finalization contract for run `2026-09-19-root-json-live-01` |
 | `EVD-ROLE-02-03` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#role-concentration-dec-02-dec-03` | accountable system owner explicitly accepted `DEC-02 == DEC-03` role concentration |
 | `EVD-GOV-EX-01` | Observed fact | `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#gov-ex-01-single-operator-governance-exception` | accountable system owner approved the exact, role-enumerated single-operator exception; eligibility only, with no DEC, SP, authorization 2, or live execution approval implied |
 | `REQ-AUTH2` | Stakeholder request | this contract | prepare one explicit live coordinated-cutover decision; no authorization yet |
-| `ASM-LIVE-WINDOW` | Assumption to validate | section 4 | remaining admission, queue, backup, traffic-release, and stop-point decisions remain unapproved |
+| `ASM-LIVE-WINDOW` | Assumption to validate | sections 4 and 5 | operational definitions are approved; `SP-0` through `SP-4`, Authorization 2, and all live execution remain unapproved |
 
 The accepted v9 evidence establishes authorization 1 completion. It is not the
 final post-freeze backup and cannot substitute for in-window evidence.
@@ -141,11 +145,11 @@ evidence location is recorded in the signed authorization record.
 | `DEC-08` | Maintenance-window start/end and timezone | `APPROVED`: `2026-09-20T20:00:00+08:00` through `2026-09-20T23:00:00+08:00`; `UTC+08:00`; approver/decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-08` | authorization-2 approver |
 | `DEC-09` | Maximum freeze duration | `APPROVED`: maximum freeze `90 minutes`; rollback reserve `60 minutes`; fail-closed if reserve is unavailable; approver/decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-09` | incident commander |
 | `DEC-10` | Latest safe writer-activation time | `APPROVED`: `2026-09-20T21:30:00+08:00`; later activation is `NO-GO`; approver/decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-10` | incident commander |
-| `DEC-11` | Exact admission-freeze command and verification query | `PENDING` | deployment owner |
-| `DEC-12` | Exact worker/queue pause, drain, and inspection commands | `PENDING` | queue/worker owner |
-| `DEC-13` | Final backup output path and retention/cleanup owner | `PENDING`; path MUST not exist before capture | evidence custodian |
+| `DEC-11` | Exact admission-freeze command and verification query | `APPROVED / NOT EXECUTED`: base URL `http://127.0.0.1:3000`; token `env:CUTOVER_CONTROL_TOKEN`; exact freeze/confirm/status commands; Billy Xu (admin), acting as `DEC-07`; `2026-09-20T16:36:47+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-11` | deployment owner |
+| `DEC-12` | Exact worker/queue pause, drain, and inspection commands | `APPROVED / NOT EXECUTED`: exact pause/inventory/quiescence/abort-restoration commands; Billy Xu (admin), acting as `DEC-06`; `2026-09-20T16:36:47+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-12` | queue/worker owner |
+| `DEC-13` | Final backup output path and retention/cleanup owner | `APPROVED / NOT EXECUTED`: create-new `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\final-post-freeze-backup`; retention/cleanup owner Billy Xu (admin); exact capture-only command; Billy Xu (admin), acting as `DEC-05`; `2026-09-20T16:36:47+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-13`; path MUST not exist before capture | evidence custodian |
 | `DEC-14` | Exact deployment command and runtime artifact verification | `APPROVED`: post-corrective runtime package v2; artifact `2c5c6fa14ff940ce1916c96bebd8229c20045147818427d06411dd3f91e78e72`; manifest SHA-256 `2713d894f20f6a502ade2aa6b55042bb7ef2853593f76736d107ff0a03ea6ac4`; attestation SHA-256 `4c24c92490c35f7c083f57db1c20b65d1de3b43e60516c4cfd66b03e67811625`; foreground Node `v22.23.2`; Billy Xu (admin), acting as `DEC-07`; `2026-09-20T11:20:13+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-14`; procedure only, not executed | deployment owner |
-| `DEC-15` | Exact pre-PONR traffic-release command | `PENDING` | deployment owner |
+| `DEC-15` | Exact pre-PONR traffic-release command | `APPROVED / NOT EXECUTED`: exact SP-3 read-only release/isolation and separately SP-4-gated enable-mutation/verification commands; reuses DEC-11 URL/token; Billy Xu (admin), acting as `DEC-07`; `2026-09-20T16:36:47+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-15` | deployment owner |
 | `DEC-16` | `SP-1` through `SP-4` approvers and communication channel | `APPROVED`: Billy Xu (admin) eligible as each `SP-1` through `SP-4` approver; create-new append-only JSONL at `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\sp-approvals.jsonl`; approver/decision owner Billy Xu (admin), acting as `DEC-02`; `2026-09-19T16:39:45+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-16`; all SP decisions remain `NOT APPROVED` | authorization-2 approver |
 | `DEC-17` | Post-PONR incident/escalation channel | `APPROVED`: create-new append-only JSONL at `E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\incident-audit.jsonl`; writer/retention owner Billy Xu (admin); finalize with SHA-256 bound into `EVD-LIVE-15`; decision owner Billy Xu (admin), acting as `DEC-03`; `2026-09-19T11:42:42+08:00`; evidence `E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-17` | incident commander |
 
@@ -304,8 +308,9 @@ Before `FROZEN`, the operator MUST prove all of the following:
 8. A mutation-free read probe leaves every designated live hash unchanged.
 9. The incident commander, rollback owner, evidence custodian, and required
    approvers are present and have acknowledged the exact stop/abort procedure.
-10. Remaining window time exceeds the approved maximum execution plus rollback
-    reserve. The exact threshold is `PENDING` under `DEC-09` and `DEC-10`.
+10. The freeze may not exceed the approved `90 minutes`, the `60-minute`
+    rollback reserve must remain available, and writer activation after
+    `2026-09-20T21:30:00+08:00` is `NO-GO` under `DEC-09` and `DEC-10`.
 
 The drain evidence MUST include the exact commands, timestamped raw output,
 queue names, worker identities, active/reserved/delayed counts, active session
@@ -658,11 +663,15 @@ operational decisions
 -> DEC-08 APPROVED: 2026-09-20T20:00:00+08:00 to 2026-09-20T23:00:00+08:00
 -> DEC-09 APPROVED: 90-minute freeze / 60-minute rollback reserve
 -> DEC-10 APPROVED: latest writer activation 2026-09-20T21:30:00+08:00
+-> DEC-11 APPROVED: exact admission/mutation freeze and status commands; not executed
+-> DEC-12 APPROVED: exact queue pause/inventory/quiescence/restoration commands; not executed
+-> DEC-13 APPROVED: exact capture-only final backup command/path/retention; not executed
 -> DEC-14 APPROVED: exact runtime package/identity/attestation and deployment procedure only; not executed
+-> DEC-15 APPROVED: exact SP-3 read-only and separately SP-4-gated mutation commands; not executed
 -> DEC-16 APPROVED: SP approver eligibility and JSONL evidence channel only
 -> DEC-17 APPROVED: 2026-09-19-root-json-live-01 incident audit
 -> DEC-02 == DEC-03 ROLE CONCENTRATION ACCEPTED
--> DEC-11 / DEC-12 / DEC-13 / DEC-15 PENDING
+-> DEC-01 THROUGH DEC-17 APPROVED / OPERATIONAL DEFINITIONS ONLY
 
 single-operator governance exception GOV-EX-01
 -> APPROVED: Billy Xu (admin), 2026-09-19T11:17:02+08:00
@@ -671,7 +680,7 @@ single-operator governance exception GOV-EX-01
 
 authorization 2 contract
 -> DRAFT FOR EXPLICIT REVIEW
--> NON-EXECUTABLE WHILE ANY DEC FIELD IS PENDING
+-> OPERATIONAL-DECISION COMPLETENESS REVIEW AND FRESH PACKAGE BINDING STILL REQUIRED
 
 authorization 2
 -> NOT AUTHORIZED

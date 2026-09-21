@@ -1,6 +1,6 @@
 # P6 Phase 2-F Authorization 2 Operational Decision Record
 
-Status: `PARTIAL / DEC-01 THROUGH DEC-10, DEC-16, DEC-17, AND GOV-EX-01 APPROVED EXCEPT DEC-11 THROUGH DEC-15 / AUTHORIZATION 2 NOT GRANTED`
+Status: `DEC-01 THROUGH DEC-17 AND GOV-EX-01 APPROVED / COMMANDS NOT EXECUTED / AUTHORIZATION 2 NOT GRANTED`
 
 This record captures explicit human operational decisions only. It does not
 constitute `SP-0`, does not grant authorization 2, and does not authorize any
@@ -238,6 +238,113 @@ Owner attestation: Billy Xu (admin), acting as Incident Commander under
 `DEC-03`, explicitly approves this writer-activation deadline. This resolves
 `DEC-10` only. Writer activation after the deadline is `NO-GO`; this does not
 approve writer activation, `SP-0`, authorization 2, or any live operation.
+
+## DEC-11
+
+### DEC-11 Admission Freeze and Verification Commands
+
+```text
+DEC-ID: DEC-11
+approval decision: APPROVE
+control-plane base URL: http://127.0.0.1:3000
+control-plane actor: Billy Xu (admin)
+token delivery/reference: Windows process environment variable env:CUTOVER_CONTROL_TOKEN
+deprecated token reference: env:P6_CONTROL_PLANE_TOKEN / MUST NOT BE USED
+audit path: E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\control-plane-audit.jsonl
+exact admission-freeze command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-11-admission-freeze
+exact semantic-mutation freeze command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-11-semantic-mutation-freeze-confirmation
+exact status/verification command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-11-frozen-status-verification
+approved by: Billy Xu (admin)
+decision owner: Billy Xu (admin), acting as DEC-07 Deployment Owner
+decision timestamp + timezone: 2026-09-20T16:36:47+08:00
+evidence/approval record location: E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-11
+source command-discovery evidence: E:\Projects\Test-Harness\docs\P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-11-canonical-commands
+status: APPROVED / NOT EXECUTED
+```
+
+Acceptance requires new-session admission and semantic mutation to be
+`blocked`, permitted read-only status probes to remain available, final state
+to be machine-readable as `frozen`, queue state to be `paused` and quiescent,
+and protected transitions to be present in the append-only audit record. Any
+mismatch, HTTP error, missing audit record, or ambiguous state is `NO-GO`.
+
+Owner attestation: Billy Xu (admin), acting as `DEC-07`, explicitly approves
+the exact DEC-11 commands and criteria incorporated above. This decision does
+not execute a command or approve `SP-0`, Authorization 2, `SP-1` through
+`SP-4`, live freeze, backup, import, writer activation, traffic release, PONR,
+or Phase 2-G.
+
+## DEC-12
+
+### DEC-12 Queue/Worker Pause, Inventory, Quiescence, and Restoration Commands
+
+```text
+DEC-ID: DEC-12
+approval decision: APPROVE
+control-plane base URL: http://127.0.0.1:3000
+control-plane actor: Billy Xu (admin)
+token delivery/reference: Windows process environment variable env:CUTOVER_CONTROL_TOKEN
+exact queue-pause command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-12-queue-pause
+exact queue inventory command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-12-queue-inventory
+exact drain/quiescence verification command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-12-quiescence-verification
+exact queue-resume / abort-restoration command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-12-explicit-abort-restoration
+approved by: Billy Xu (admin)
+decision owner: Billy Xu (admin), acting as DEC-06 Queue/Worker Drain Owner
+decision timestamp + timezone: 2026-09-20T16:36:47+08:00
+evidence/approval record location: E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-12
+source command-discovery evidence: E:\Projects\Test-Harness\docs\P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-12-canonical-commands
+status: APPROVED / NOT EXECUTED
+```
+
+Quiescence requires queue state `paused`, `active = 0`, `reserved = 0`,
+derived `inFlight = active + reserved = 0`, and `isQuiescent = true`.
+Waiting/delayed jobs may remain only when reported and unable to execute.
+Queue close/shutdown is not quiescence proof. Resume and abort restoration are
+explicit, protected, auditable operations. Any nonzero active, reserved, or
+in-flight count is `NO-GO`.
+
+Owner attestation: Billy Xu (admin), acting as `DEC-06`, explicitly approves
+the exact DEC-12 commands and criteria incorporated above. This decision does
+not execute a command or approve `SP-0`, Authorization 2, any later stop point,
+or any live operation.
+
+## DEC-13
+
+### DEC-13 Final Post-Freeze Backup Command, Path, and Retention
+
+```text
+DEC-ID: DEC-13
+approval decision: APPROVE
+exact datastore: E:\Projects\Test-Harness\data\testharness.json
+exact cognition root: E:\Projects\Test-Harness\.cognition
+exact site-profile root: E:\Projects\Test-Harness\.site-profiles
+exact resolution manifest: E:\Projects\Test-Harness\.p6-rehearsal\example-com-resolution-v2.json
+exact resolution manifest SHA-256: f6965b6b84d3727011257e25947ae5334c94a3b6f1c36682da232e4951aac8d0
+exact final-backup output path: E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\final-post-freeze-backup
+creation rule: create-new; output path MUST NOT exist before capture
+exact capture-only command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-13-capture-only-final-backup
+retention/cleanup owner: Billy Xu (admin)
+retention rule: immutable through Phase 2-G completion and its evidence-retention period; cleanup requires a later explicit evidence-retention decision
+approved by: Billy Xu (admin)
+decision owner: Billy Xu (admin), acting as DEC-05 Evidence Custodian
+decision timestamp + timezone: 2026-09-20T16:36:47+08:00
+evidence/approval record location: E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-13
+source command-discovery evidence: E:\Projects\Test-Harness\docs\P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-13-canonical-command
+status: APPROVED / NOT EXECUTED
+```
+
+Acceptance requires the exact approved ten-file inventory,
+source-before/copy/source-after SHA-256 equality, a content-derived snapshot
+ID, manifest SHA-256, deterministic datastore semantic SHA-256, no live-source
+mutation, and create-new evidence. The command is capture-only and must not run
+a clone restore, rehearsal, preflight import, live import, writer activation,
+traffic release, or PONR action. Failure preserves captured evidence and is
+`NO-GO`.
+
+Owner attestation: Billy Xu (admin), acting as `DEC-05`, explicitly approves
+the exact DEC-13 command, inputs, output path, retention ownership, and
+acceptance criteria incorporated above. This decision does not execute the
+backup or approve `SP-0`, Authorization 2, any stop point, or any live action.
 
 ## DEC-14
 
@@ -491,6 +598,45 @@ Owner attestation:
 > DEC-14 overall, DEC-11, DEC-15, SP-0 through SP-4, Authorization 2, live
 > runtime start, or any live cutover action.
 
+## DEC-15
+
+### DEC-15 Pre-PONR Traffic-Release Controls
+
+```text
+DEC-ID: DEC-15
+approval decision: APPROVE
+control-plane base URL: http://127.0.0.1:3000
+binding: identical to DEC-11
+control-plane actor: Billy Xu (admin)
+token delivery/reference: Windows process environment variable env:CUTOVER_CONTROL_TOKEN
+token binding: identical to DEC-11
+audit path: E:\Projects\Test-Harness\.p6-live-cutover\2026-09-19-root-json-live-01\control-plane-audit.jsonl
+exact read-only traffic-release command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-15-read-only-traffic-release
+exact read-only isolation verification command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-15-read-only-isolation-verification
+exact mutation-capable enable command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-15-mutation-capable-enable
+exact mutation-state verification command: P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-15-mutation-state-verification
+approved by: Billy Xu (admin)
+decision owner: Billy Xu (admin), acting as DEC-07 Deployment Owner
+decision timestamp + timezone: 2026-09-20T16:36:47+08:00
+evidence/approval record location: E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#dec-15
+source command-discovery evidence: E:\Projects\Test-Harness\docs\P6-PHASE2-F-CONTROL-PLANE-COMMAND-DISCOVERY.md#dec-15-canonical-commands
+status: APPROVED / NOT EXECUTED
+```
+
+SP-3 may execute only the read-only release and isolation verification. Those
+commands must leave new-session admission and mutation-capable traffic blocked.
+They do not imply or execute mutation enablement. The separately approved and
+persisted SP-4 decision is required before the exact `enable-mutation` command
+may run. Only successful execution and verification of that SP-4-gated command
+may establish `mutation-enabled`; any rejection, ambiguity, state mismatch, or
+missing audit record is `NO-GO`.
+
+Owner attestation: Billy Xu (admin), acting as `DEC-07`, explicitly approves
+the exact DEC-15 bindings, commands, stop-point separation, and acceptance
+criteria incorporated above. This decision does not execute either release
+command or approve `SP-0`, Authorization 2, `SP-3`, `SP-4`, traffic release,
+mutation-capable admission, PONR, or Phase 2-G.
+
 ## DEC-16
 
 ### DEC-16 SP-1 through SP-4 approvers and approval/evidence channel
@@ -555,15 +701,15 @@ as the post-PONR incident/escalation channel. This resolves `DEC-17` only. The
 path MUST NOT be created before the live run, and this decision does not approve
 `SP-0`, authorization 2, or live execution.
 
-## Remaining pending decisions
+## Operational decision completeness
 
 | DEC ID | Decision | Status | Required decision source |
 |---|---|---|---|
-| `DEC-11` | Admission freeze and verification commands | `PENDING` | deployment owner |
-| `DEC-12` | Queue/worker pause, drain, and inspection commands | `PENDING` | queue/worker drain owner |
-| `DEC-13` | Final backup path and retention/cleanup owner | `PENDING` | evidence custodian |
+| `DEC-11` | Admission freeze and verification commands | `APPROVED / NOT EXECUTED` | deployment owner |
+| `DEC-12` | Queue/worker pause, drain, and inspection commands | `APPROVED / NOT EXECUTED` | queue/worker drain owner |
+| `DEC-13` | Final backup path and retention/cleanup owner | `APPROVED / NOT EXECUTED`; path MUST not exist before capture | evidence custodian |
 | `DEC-14` | Deployment command and runtime artifact verification | `APPROVED` | deployment owner |
-| `DEC-15` | Pre-PONR traffic-release command | `PENDING` | deployment owner |
+| `DEC-15` | Pre-PONR traffic-release command | `APPROVED / NOT EXECUTED` | deployment owner |
 
 ## Role concentration DEC-02 DEC-03
 
@@ -691,7 +837,8 @@ DEC-14 Deployment and Runtime-Byte Attestation
 -> EXACT DEPLOYMENT PROCEDURE ONLY; NOT EXECUTED
 
 DEC-11 / DEC-12 / DEC-13 / DEC-15
--> PENDING / HARD BLOCKERS
+-> APPROVED: Billy Xu (admin), 2026-09-20T16:36:47+08:00
+-> EXACT OPERATIONAL DEFINITIONS ONLY; NOT EXECUTED
 
 SP-0 / authorization 2
 -> NOT AUTHORIZED
@@ -703,5 +850,5 @@ P6 Phase 2-G
 -> NOT AUTHORIZED
 ```
 
-No remaining DEC may be filled without a new explicit human decision and its
-evidence location.
+Operational-decision completeness does not constitute `SP-0`, Authorization 2,
+any `SP-1` through `SP-4` decision, or permission to execute a live command.
