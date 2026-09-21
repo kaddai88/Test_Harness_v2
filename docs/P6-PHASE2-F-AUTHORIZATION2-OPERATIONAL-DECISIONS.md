@@ -791,6 +791,120 @@ Every affected stop-point decision remains a separate,
 pre-action, timestamped, append-only record bound to exact machine-readable
 evidence. No prior approval permits automatic continuation.
 
+## Pre-SP-0 Operationalization Corrective Gate
+
+```text
+P6 Phase 2-F Pre-SP-0 Operationalization Corrective Gate
+
+approval decision:
+APPROVE
+
+approved by:
+Billy Xu (admin)
+
+decision owner:
+Billy Xu (admin), acting as accountable system owner
+
+decision timestamp + timezone:
+2026-09-21T12:40:41+08:00
+
+evidence/approval record location:
+E:\Projects\Test-Harness\docs\P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#pre-sp-0-operationalization-corrective-gate
+
+status:
+APPROVED / CORRECTIVE DESIGN + IMPLEMENTATION + FOCUSED TESTS +
+INDEPENDENT REVIEW + COMMAND DISCOVERY ONLY
+```
+
+Authorized scope:
+
+- `C6` evidence-root package and finalization tooling: define a
+  machine-verifiable, create-new evidence-root structure; bind child artifacts;
+  and define finalization and SHA-256 procedures. No live evidence generation
+  is authorized.
+- `C7` isolated final-backup restore and verification CLI: provide a standalone
+  restore command with isolated-target support, raw and semantic hash
+  verification, provider reload/restart/read verification, and source
+  immutability verification.
+- `C8` live preflight, import, reconcile, replay, and revoke operational
+  tooling: provide exact commands and machine-readable result criteria for the
+  final preflight, SiteProfile import, Cognition import, reconciliation,
+  importer replay/idempotency verification, and migration-authorization revoke
+  plus rejection proof.
+- `C9` complete pre-PONR rollback orchestration: restore the authority datastore
+  from the final post-freeze backup; verify raw and semantic hashes and row
+  counts; restore the previous approved application/runtime artifact and the
+  previous authority/import/projection direction as one unit; preserve
+  Cognition control-state partitions; establish an explicit rollback GO
+  boundary; and prohibit partial-domain rollback.
+- `C10` complete freeze-entry evidence collection: verify exact ten-file
+  inventory/hash equality, zero active/running sessions, queue pause and
+  quiescence, all governed mutation paths, mutation-free reads with unchanged
+  governed hashes, and exact runtime/provider/path/identity bindings; emit
+  machine-readable evidence suitable for `SP-0` package review.
+- Focused regression tests for `C6` through `C10`, independent corrective
+  review, read-only command discovery, and documentation updates necessary to
+  describe the implemented corrective tooling are also authorized.
+
+The following remain explicitly not authorized:
+
+- Any live command execution or live runtime start.
+- Live freeze, queue pause, final backup capture, isolated restore against live
+  or source paths, live preflight, live import, writer activation, traffic
+  release, mutation enablement, or PONR.
+- Approval or execution of `SP-0` through `SP-4`, Authorization 2, package
+  freeze, or P6 Phase 2-G.
+- A new maintenance window, a new writer-activation deadline, or selection of
+  the final evidence root, final isolated restore target, or previous live
+  artifact.
+
+The following human decisions remain separate later gates:
+
+```text
+new DEC-08 maintenance window
+-> NOT DECIDED
+
+DEC-09 90-minute freeze / 60-minute rollback reserve
+-> EXISTING DECISION REMAINS
+-> NEW WINDOW MUST EXPLICITLY REAFFIRM IT
+
+new DEC-10 writer-activation deadline
+-> NOT DECIDED
+
+exact final evidence root
+-> NOT DECIDED
+
+exact isolated restore target
+-> NOT DECIDED
+
+exact previous live artifact
+-> NOT DECIDED
+```
+
+Completion requires `C6` through `C10` implementation, focused tests passing,
+independent corrective review passing, read-only command discovery completion,
+and correction of stale versus real blockers in the contract trace matrix. The
+gate then stops before the next human-decision and package-completeness review.
+Completion does not constitute Authorization-2 package freeze, `SP-0`,
+Authorization 2, or permission for any live operation.
+
+Runtime identity consequence:
+
+```text
+runtime-package-v2 / existing DEC-14
+-> RETAINED AS HISTORICAL APPROVED EVIDENCE FOR THOSE EXACT BYTES
+-> MUST NOT BE REWRITTEN, OVERWRITTEN, OR REBUILT IN PLACE
+
+post-C6-C10 final live candidate
+-> MUST USE A NEW CREATE-NEW PACKAGE ROOT
+-> MUST HAVE A NEW ARTIFACT IDENTITY, MANIFEST SHA-256, AND ATTESTATION SHA-256
+-> MUST HAVE A NEW EXACT DEPLOYMENT BINDING
+-> REQUIRES A NEW EXPLICIT SUPERSEDING DEC-14 APPROVAL
+```
+
+This corrective gate does not authorize selection of that package root,
+generation of the final package, package freeze, or the superseding approval.
+
 ## Current gate
 
 ```text
@@ -839,6 +953,10 @@ DEC-14 Deployment and Runtime-Byte Attestation
 DEC-11 / DEC-12 / DEC-13 / DEC-15
 -> APPROVED: Billy Xu (admin), 2026-09-20T16:36:47+08:00
 -> EXACT OPERATIONAL DEFINITIONS ONLY; NOT EXECUTED
+
+P6 Phase 2-F Pre-SP-0 Operationalization Corrective Gate
+-> APPROVED: Billy Xu (admin), 2026-09-21T12:40:41+08:00
+-> DESIGN + IMPLEMENTATION + FOCUSED TESTS + INDEPENDENT REVIEW + READ-ONLY COMMAND DISCOVERY ONLY
 
 SP-0 / authorization 2
 -> NOT AUTHORIZED
