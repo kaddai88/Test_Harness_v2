@@ -840,8 +840,10 @@ Authorized scope:
 - `C10` complete freeze-entry evidence collection: verify exact ten-file
   inventory/hash equality, zero active/running sessions, queue pause and
   quiescence, all governed mutation paths, mutation-free reads with unchanged
-  governed hashes, and exact runtime/provider/path/identity bindings; emit
-  machine-readable evidence suitable for `SP-0` package review.
+  governed hashes, and exact runtime/provider/path/identity bindings. Before
+  `SP-0`, review only the tooling, schema, command, binding, and
+  controlled-fixture readiness; the machine-readable live C10 result is
+  produced only after `SP-0` and separately authorized freeze-entry controls.
 - Focused regression tests for `C6` through `C10`, independent corrective
   review, read-only command discovery, and documentation updates necessary to
   describe the implemented corrective tooling are also authorized.
@@ -935,6 +937,9 @@ WR-02 C10 pre-SP-0 readiness vs post-SP-0 live evidence timing
 WR-03 deterministic human-decision byte binding
 WR-04 mutable external-artifact finalization eligibility
 WR-05 exact runtime process-instance receipt for C9
+-> PASS
+
+WR-06 C6 / EVD-LIVE-15 finalization circularity
 -> ADDRESSED IN CURRENT SPEC REVISION
 -> DIRECTED WRITTEN-SPEC RE-REVIEW REQUIRED
 
@@ -999,7 +1004,8 @@ P6 Phase 2-F Pre-SP-0 Operationalization Corrective Gate
 -> DESIGN + IMPLEMENTATION + FOCUSED TESTS + INDEPENDENT REVIEW + READ-ONLY COMMAND DISCOVERY ONLY
 
 Written-spec review
--> WR-01 THROUGH WR-05 ADDRESSED
+-> WR-01 THROUGH WR-05 PASS
+-> WR-06 ADDRESSED
 -> RE-REVIEW REQUIRED / NOT YET APPROVED FOR IMPLEMENTATION PLAN
 
 SP-0 / authorization 2

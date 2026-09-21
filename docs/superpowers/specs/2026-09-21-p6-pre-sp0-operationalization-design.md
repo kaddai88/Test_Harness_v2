@@ -16,19 +16,10 @@ architecture direction
 initial written-spec review
 -> CHANGES REQUIRED
 
-WR-01 C8 known-abort vs ambiguous-intent states
--> ADDRESSED / RE-REVIEW REQUIRED
+directed written-spec re-review
+-> WR-01 THROUGH WR-05 PASS
 
-WR-02 C10 pre-SP-0 readiness vs post-SP-0 live evidence timing
--> ADDRESSED / RE-REVIEW REQUIRED
-
-WR-03 deterministic human-decision byte binding
--> ADDRESSED / RE-REVIEW REQUIRED
-
-WR-04 mutable external-artifact finalization eligibility
--> ADDRESSED / RE-REVIEW REQUIRED
-
-WR-05 exact runtime process-instance receipt for C9
+WR-06 C6 / EVD-LIVE-15 finalization circularity
 -> ADDRESSED / RE-REVIEW REQUIRED
 
 implementation plan and production implementation
@@ -258,8 +249,10 @@ revoke reconciliation/resolution may proceed.
 ### 7.1 Structure
 
 C6 initializes an absent, human-approved root and records its operational
-contract binding. Child artifacts are associated with `EVD-LIVE-01` through
-`EVD-LIVE-15` through create-new binding records.
+contract binding. Governed child artifacts are associated with `EVD-LIVE-01`
+through `EVD-LIVE-14` through create-new binding records. `EVD-LIVE-15` is the
+output of successful finalization, not a child binding or finalization
+prerequisite.
 
 Artifacts outside the evidence root, including final backup, control-plane
 audit, SP approvals, and incident audit, are external bound artifacts. Their
@@ -281,9 +274,18 @@ finalization record does not match its bytes cannot enter the final manifest.
 
 ### 7.2 Manifest and seal
 
-The evidence manifest:
+Finalization may begin only after:
 
-- binds all governed child and external artifacts;
+- all `EVD-LIVE-01` through `EVD-LIVE-14` bindings are complete and exact;
+- every required external artifact has an exact owner-finalization record;
+- all governed child and external-artifact bindings are complete; and
+- verification finds no missing, extra, modified, drifted, or link-substituted
+  artifact.
+
+The exact final evidence manifest is then created. It:
+
+- contains the governed `EVD-LIVE-01` through `EVD-LIVE-14` bindings;
+- contains the complete child and external-artifact hash inventory;
 - uses deterministic ordinal ordering and runtime-local canonical JSON;
 - does not bind itself; and
 - does not bind the finalization seal.
@@ -291,8 +293,11 @@ The evidence manifest:
 The finalization seal binds the exact manifest bytes and manifest SHA-256 and
 records run ID, actor, and finalization timestamp.
 
-Seal creation requires all `EVD-LIVE-01` through `EVD-LIVE-15` bindings and all
-required external-artifact finalization records to be complete and exact.
+Successful seal creation produces `EVD-LIVE-15`, represented by the finalized
+manifest and seal pair. The manifest supplies the child and external-artifact
+hash inventory; the seal binds the exact manifest bytes and SHA-256 and
+establishes the final evidence identity. `EVD-LIVE-15` is not a prerequisite
+child of, and is not recursively serialized into, that same finalization.
 
 Post-finalization verification fails for any missing, extra, modified, or
 link-substituted child; external artifact drift; manifest drift; or seal drift.
@@ -686,7 +691,10 @@ path/hash/size capture, link rejection, ordinal manifest ordering,
 non-recursive manifest/seal semantics, incomplete-finalization seal-only
 completion, mutable external-artifact ineligibility, exact owner-finalization
 records, all drift modes, extra/missing governed artifacts, and sealed-root
-write rejection.
+write rejection. Tests also prove that finalization requires complete and exact
+`EVD-LIVE-01` through `EVD-LIVE-14` bindings, does not require a pre-existing
+`EVD-LIVE-15`, and produces `EVD-LIVE-15` only through successful manifest and
+seal finalization.
 
 ### 14.3 C7
 
