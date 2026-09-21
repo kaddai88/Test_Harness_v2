@@ -905,6 +905,46 @@ post-C6-C10 final live candidate
 This corrective gate does not authorize selection of that package root,
 generation of the final package, package freeze, or the superseding approval.
 
+C10 timing clarification:
+
+```text
+pre-SP-0 package review
+-> REVIEWS C10 TOOLING / SCHEMA / COMMAND / BINDING READINESS ONLY
+-> DOES NOT REQUIRE OR ACCEPT A LIVE C10 RESULT
+
+after SP-0 and separately authorized freeze-entry controls
+-> C10 MAY BE EXECUTED IN-WINDOW
+-> C10 PASS IS REQUIRED BEFORE FROZEN / FINAL BACKUP PROGRESSION
+```
+
+The current corrective gate authorizes C10 implementation, controlled-fixture
+tests, independent review, and read-only command discovery only. It does not
+authorize live C10 execution.
+
+Written-spec review status:
+
+```text
+architecture direction
+-> ACCEPTED
+
+initial written-spec review
+-> CHANGES REQUIRED
+
+WR-01 C8 known-abort vs ambiguous-intent states
+WR-02 C10 pre-SP-0 readiness vs post-SP-0 live evidence timing
+WR-03 deterministic human-decision byte binding
+WR-04 mutable external-artifact finalization eligibility
+WR-05 exact runtime process-instance receipt for C9
+-> ADDRESSED IN CURRENT SPEC REVISION
+-> DIRECTED WRITTEN-SPEC RE-REVIEW REQUIRED
+
+implementation plan
+-> DO NOT CREATE
+
+production implementation
+-> DO NOT START
+```
+
 ## Current gate
 
 ```text
@@ -957,6 +997,10 @@ DEC-11 / DEC-12 / DEC-13 / DEC-15
 P6 Phase 2-F Pre-SP-0 Operationalization Corrective Gate
 -> APPROVED: Billy Xu (admin), 2026-09-21T12:40:41+08:00
 -> DESIGN + IMPLEMENTATION + FOCUSED TESTS + INDEPENDENT REVIEW + READ-ONLY COMMAND DISCOVERY ONLY
+
+Written-spec review
+-> WR-01 THROUGH WR-05 ADDRESSED
+-> RE-REVIEW REQUIRED / NOT YET APPROVED FOR IMPLEMENTATION PLAN
 
 SP-0 / authorization 2
 -> NOT AUTHORIZED

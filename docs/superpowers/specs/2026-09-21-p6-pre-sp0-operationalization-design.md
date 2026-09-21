@@ -1,11 +1,39 @@
 # P6 Pre-SP-0 Operationalization Corrective Design
 
-Status: `PENDING WRITTEN-SPEC REVIEW`
+Status: `PENDING WRITTEN-SPEC RE-REVIEW`
 
 Date: `2026-09-21`
 
 Authorization record:
 `docs/P6-PHASE2-F-AUTHORIZATION2-OPERATIONAL-DECISIONS.md#pre-sp-0-operationalization-corrective-gate`
+
+Written-spec review disposition:
+
+```text
+architecture direction
+-> ACCEPTED
+
+initial written-spec review
+-> CHANGES REQUIRED
+
+WR-01 C8 known-abort vs ambiguous-intent states
+-> ADDRESSED / RE-REVIEW REQUIRED
+
+WR-02 C10 pre-SP-0 readiness vs post-SP-0 live evidence timing
+-> ADDRESSED / RE-REVIEW REQUIRED
+
+WR-03 deterministic human-decision byte binding
+-> ADDRESSED / RE-REVIEW REQUIRED
+
+WR-04 mutable external-artifact finalization eligibility
+-> ADDRESSED / RE-REVIEW REQUIRED
+
+WR-05 exact runtime process-instance receipt for C9
+-> ADDRESSED / RE-REVIEW REQUIRED
+
+implementation plan and production implementation
+-> NOT AUTHORIZED BEFORE WRITTEN-SPEC RE-REVIEW PASS
+```
 
 ## 1. Purpose
 
@@ -120,13 +148,28 @@ appends a non-existing suffix before containment checks.
 The ledger verifies human decisions but never creates, infers, completes, or
 approves them.
 
+Markdown anchors remain human navigation aids, not machine byte-range
+boundaries. Before package freeze, every pre-SP-0 decision consumed by tooling
+must have a separately human-approved, machine-readable decision sidecar. Each
+sidecar is one UTF-8 JSON document with a required terminating LF and contains
+the decision ID, source decision-document canonical path and SHA-256, stable
+source anchor, exact approved payload, approver, decision timestamp, and
+decision status.
+
 Pre-SP-0 frozen decisions are bound by:
 
 ```text
 decision document SHA-256
-stable anchor or decision ID
-exact decision payload SHA-256
+stable source anchor
+machine-readable decision-sidecar SHA-256
+decision ID and exact approved payload from that sidecar
 ```
+
+The sidecar file is read exactly once. The SHA-256 is calculated from that
+exact byte buffer and JSON is parsed from the same bytes without newline,
+Unicode, key-order, or whitespace normalization. A missing terminating LF,
+BOM, extra trailing bytes, source-document hash mismatch, or decision-ID
+mismatch is rejected.
 
 In-window SP and rollback-GO decisions are bound by:
 
@@ -138,8 +181,16 @@ state
 reviewed evidence hashes
 ```
 
-Line numbers are not identities. Duplicate decision IDs, truncated JSONL,
-missing fields, mismatched state, or mismatched evidence hashes are rejected.
+An in-window decision file is read into one byte buffer exactly once. Records
+must be UTF-8 JSONL with LF line endings, no BOM, no blank records, no CRLF, and
+a terminating LF for every record. The record byte slice includes its
+terminating LF. The record SHA-256 and JSON parse both use that same slice; the
+parser treats the LF as JSON trailing whitespace and performs no
+normalization. Duplicate decision IDs, truncated JSONL, missing fields,
+mismatched state, or mismatched evidence hashes are rejected.
+
+Line numbers are not identities. Tooling never extracts or hashes a Markdown
+section by interpreting heading ranges.
 
 ## 6. Operation Ledger
 
@@ -187,8 +238,10 @@ STOP
 ```
 
 An intent without completion is `AMBIGUOUS`. All nominal commands reject it.
-Automatic retry, automatic completion reconstruction, and inference from a
-result file are prohibited.
+Recovery commands are not nominal commands, but they remain prohibited unless
+their own separately approved reconciliation or rollback gate explicitly binds
+the unresolved intent and its evidence. Automatic retry, automatic completion
+reconstruction, and inference from a result file are prohibited.
 
 Resolution requires a separate, explicitly authorized reconciliation path that
 classifies the effect as `NO_EFFECT`, `COMPLETED_EFFECT`, or `UNKNOWN` under a
@@ -213,6 +266,19 @@ audit, SP approvals, and incident audit, are external bound artifacts. Their
 bindings record exact canonical path, byte length, and SHA-256. They are not
 silently copied into the root.
 
+External artifacts that remain appendable during the run may be registered but
+are not eligible for the final evidence manifest. Final-manifest eligibility
+requires a create-new, owner-specific finalization record proving that the
+artifact's producer has reached its defined closed/finalized state. That record
+binds the owner, artifact kind, canonical path, exact final byte length,
+SHA-256, closed/finalized timestamp, and the operation or state that ended
+append eligibility.
+
+Control-plane audit, SP approvals, incident audit, and any other append-only
+external artifact must each reach this owner-specific state. A file that is
+still open for append, whose producer remains eligible to append, or whose
+finalization record does not match its bytes cannot enter the final manifest.
+
 ### 7.2 Manifest and seal
 
 The evidence manifest:
@@ -224,6 +290,9 @@ The evidence manifest:
 
 The finalization seal binds the exact manifest bytes and manifest SHA-256 and
 records run ID, actor, and finalization timestamp.
+
+Seal creation requires all `EVD-LIVE-01` through `EVD-LIVE-15` bindings and all
+required external-artifact finalization records to be complete and exact.
 
 Post-finalization verification fails for any missing, extra, modified, or
 link-substituted child; external artifact drift; manifest drift; or seal drift.
@@ -318,10 +387,33 @@ Revocation is persisted in the ledger. Rejection proof invokes the command
 boundary after revocation and must be rejected before a writable provider is
 opened.
 
-Any import, reconciliation, or replay failure advances only to
-`MIGRATION_ABORT_REQUIRED`. This state does not authorize C9. Further import or
-replay is prohibited; explicit revoke remains available, and rollback still
-requires a separate exact rollback GO.
+Migration failures have two distinct states:
+
+```text
+MIGRATION_ABORT_REQUIRED
+-> failure effect is fully known
+-> no unresolved intent exists
+-> further import and replay are prohibited
+-> explicit revoke remains available
+-> C9 still requires a separate exact rollback GO
+
+MIGRATION_AMBIGUOUS
+-> an intent exists without completion, or an effect cannot be proven
+-> import, replay, reconcile, revoke, and rejection proof are prohibited
+-> writable migration provider must not open
+-> only explicit effect reconciliation is allowed
+```
+
+An import, reconciliation, or replay failure advances to
+`MIGRATION_ABORT_REQUIRED` only when the exact effect is proven and no intent is
+unresolved. Any missing completion or uncertain durable effect advances to
+`MIGRATION_AMBIGUOUS`.
+
+Neither state authorizes C9. C9 is a recovery command rather than a nominal
+migration command. It may proceed from `MIGRATION_AMBIGUOUS` only under a new
+rollback GO that binds every unresolved-intent hash and its current evidence,
+and only when the ambiguity is not an accepted or ambiguous post-writer
+authority-only mutation. Otherwise pre-PONR restore remains prohibited.
 
 ## 10. C9 Complete Pre-PONR Rollback
 
@@ -332,14 +424,16 @@ Rollback may begin only when all of the following are proven:
 
 - an exact rollback execution GO exists;
 - accepted post-writer authority-only mutations are zero;
-- ambiguous mutation outcomes are zero;
+- ambiguous post-writer authority-only mutation outcomes are zero;
 - the final backup identity and hashes match;
 - the previous artifact identity and hashes match; and
-- the current runtime and frozen-state evidence match.
+- the current runtime, exact runtime execution receipt, and frozen-state
+  evidence match.
 
 The rollback GO record binds this exact failed/current state, zero-accepted
 proof hash, zero-ambiguous proof hash, final-backup identity/hash, previous
-artifact identity/hash, current runtime identity, and frozen-state evidence
+artifact identity/hash, current runtime identity, runtime execution-receipt
+hash, every unresolved-intent hash when applicable, and frozen-state evidence
 hash. Any mismatch requires a new rollback GO.
 
 The tool must not infer the previous artifact from v9 rehearsal evidence, the
@@ -347,12 +441,50 @@ historical `9edda6be...` package, current v2 package, or a workspace build.
 Those candidates are rejected unless a later human decision explicitly
 approves the exact artifact as the previous live artifact.
 
+### 10.1 Exact process-instance identity
+
+Static artifact, entrypoint, and command identities do not identify a running
+process instance. The future superseding DEC-14 launch procedure must therefore
+produce a create-new `p6-runtime-execution-receipt-v1` from the process-owning
+launch wrapper. The receipt binds:
+
+```text
+run ID
+PID
+OS-observed process creation/start timestamp
+Node executable canonical path and version
+exact command line and deployed entrypoint
+runtime package canonical root
+artifact identity
+manifest SHA-256
+working directory
+approved non-secret environment bindings
+secret references or approved fingerprints, never secret values
+receipt creation timestamp and actor
+```
+
+The receipt bytes and SHA-256 are bound into the operation ledger and rollback
+GO. C9 reads the receipt bytes exactly once, then verifies that the PID still
+exists; OS-observed executable, command line, and process start time exactly
+match; and exactly one process instance is bound to that run ID and package.
+
+Process-name matching, partial command-line matching, port-owner guessing, or
+selecting the first matching `node.exe` process is prohibited. Any absent,
+stale, duplicate, or mismatched instance is `NO-GO` before a stop signal is
+sent.
+
+This corrective design authorizes implementation and testing of the receipt
+schema, process-owning launch wrapper, and verifier. It does not authorize a
+runtime start. The future exact launch command, package identity, and receipt
+path require the superseding DEC-14 human decision.
+
 The orchestration:
 
 1. reasserts and verifies freeze;
 2. preserves failed-state datastore, logs, audit, and hashes outside the restore
    target;
-3. verifies and stops the exact current single-process runtime;
+3. verifies the exact execution receipt and stops only that exact current
+   single-process runtime instance;
 4. restores the authority datastore as one semantic rollback unit;
 5. verifies exact raw hash, semantic hash, row counts, provider reload, and
    authority reads;
@@ -377,6 +509,28 @@ requires post-PONR preservation/reconciliation instead.
 C10 is a read-only collector except for its exact mutation rejection probe and
 create-new evidence output. It does not redesign session lifecycle or the
 control plane.
+
+### 11.1 SP-0 timing boundary
+
+C10 has separate readiness and execution phases:
+
+```text
+pre-SP-0 package review
+-> reviews C10 implementation, schema, exact command syntax, bindings,
+   focused tests, and controlled-fixture evidence only
+-> does not require or accept a real live C10 result
+
+after SP-0
+-> execute separately approved freeze-entry controls
+-> execute the exact C10 command
+-> C10 result becomes in-window freeze-entry evidence
+-> C10 PASS is required before FROZEN and final-backup progression
+```
+
+The current corrective gate may implement and test C10 but may not execute it
+against the live runtime. Tooling readiness is a pre-SP-0 package blocker; a
+live C10 result is not pre-SP-0 evidence and cannot exist before SP-0
+authorization and freeze entry.
 
 The flow is:
 
@@ -515,10 +669,11 @@ then adds the minimum behavior needed to pass before refactoring.
 ### 14.1 Shared contract and ledger
 
 Tests cover missing values, placeholders, relative paths, canonical overlap,
-link aliases, exact-byte hashing/parsing, both decision-binding forms,
-duplicate decisions, deterministic event ordering, chain tampering, invalid
-transitions, unresolved intents, explicit effect classification, and revoke
-intent fail-closure.
+link aliases, exact-byte hashing/parsing, machine-readable pre-SP decision
+sidecars, LF-inclusive JSONL record slicing, both decision-binding forms,
+single-read TOCTOU resistance, duplicate decisions, deterministic event
+ordering, chain tampering, invalid transitions, unresolved intents, explicit
+effect classification, and revoke-intent fail-closure.
 
 Every `exit 2` test uses injected adapters to prove zero writable-provider,
 process, datastore, and request interaction. Every post-boundary fault test
@@ -529,7 +684,8 @@ expects `exit 1 / AMBIGUOUS`.
 Tests cover create-new initialization, child and external bindings, canonical
 path/hash/size capture, link rejection, ordinal manifest ordering,
 non-recursive manifest/seal semantics, incomplete-finalization seal-only
-completion, all drift modes, extra/missing governed artifacts, and sealed-root
+completion, mutable external-artifact ineligibility, exact owner-finalization
+records, all drift modes, extra/missing governed artifacts, and sealed-root
 write rejection.
 
 ### 14.3 C7
@@ -544,8 +700,9 @@ provider behavior, and retained non-reusable partial targets.
 Tests cover the preflight STOP, exact SP-1/preflight hash binding, every ordered
 transition, one-result/one-completion behavior, blocked transitions before
 writable-provider open, revoke-intent closure, count/provenance/collision drift,
-idempotent replay, persistent revoke, rejection proof, partial imports, and
-ambiguous completion.
+idempotent replay, persistent revoke, rejection proof, known-abort versus
+ambiguous-migration state, C9 recovery-command exception checks, partial
+imports, and ambiguous completion.
 
 Integration tests use the real JSON provider only against temporary copies.
 
@@ -554,8 +711,9 @@ Integration tests use the real JSON provider only against temporary copies.
 Tests cover every rollback-GO evidence field, pre-side-effect rejection,
 accepted/ambiguous mutation prohibition, complete semantic rollback,
 control-state preservation, previous-artifact verification, previous-direction
-verification, absence of partial options, frozen success state, and absence of
-traffic release.
+verification, exact process receipt, PID/start-time/executable/command-line
+matching, duplicate target-process rejection, absence of partial options,
+frozen success state, and absence of traffic release.
 
 Fault injection surrounds every process and datastore boundary. Additional
 tests reject v9 rehearsal identity, the historical `9edda6be...` candidate, and
@@ -568,7 +726,8 @@ Tests cover exact ten-file inventory, link/path ambiguity, all six nonterminal
 statuses, unknown statuses, zero lifecycle mutation, queue quiescence, exact
 runtime identity, reviewed mutation-surface binding, exact rejection request,
 pre-request `NO-GO`, all post-request ambiguity outcomes, governed hash drift,
-and a request count of one.
+request count of one, and explicit separation between pre-SP-0 tooling
+readiness and post-SP-0 live-result eligibility.
 
 Current runtime identity mismatch must reject before the mutation probe is
 sent.
@@ -595,6 +754,10 @@ C6 init evidence root
 -> C6 finalize
 -> C6 verify
 ```
+
+The controlled C10 step simulates the post-SP-0 in-window phase. Its fixture
+result is test evidence for tooling behavior only and cannot be presented as a
+live pre-SP-0 C10 result.
 
 C9 has a separate integration fixture with a fake single-process adapter. No
 real runtime is started.
